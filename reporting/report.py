@@ -2,6 +2,7 @@ import json
 import uuid
 
 from handlers.events import parse_event_time
+from handlers.file_handlers import validate_test_case
 
 def evaluate_manual_expectation(
     test_context,
@@ -517,7 +518,108 @@ def partition_test_results(selected_events, event_results):
         "missing_result_ids": missing_result_ids,
     }
 
+def read_evidence_field(event, path):
+    # Окремий прапорець розрізняє відсутній ключ і наявне значення null.
+    value = event
+    for key in path:
+        if not isinstance(value, dict) or key not in value:
+            return False, None
+        value = value[key]
+    return True, value
+
+
+def evaluate_telemetry(test_case, selected_events):
+    if test_case["schema_version"] == 1:
+        return {
+            "status": "not_assessed", "scope": "selected_events", "requirements": [],
+            "reason": "Contract v1 does not declare telemetry requirements.",
+        }
+
+    checks = []
+    for requirement in test_case["telemetry"]["requirements"]:
+        candidates = []
+        rejected_events = []
+        for event in selected_events:
+            failed_checks = []
+            # Перевіряємо всі предикати AND, щоб пояснити всі невідповідності.
+            # Зберігаємо діагностику лише відхилених подій, не дублюємо успішні.
+            for predicate in requirement["selector"]:
+                present, actual = read_evidence_field(event, predicate["path"])
+                expected = predicate["equals"]
+                reason = None
+                if not present:
+                    reason = "field_missing"
+                elif type(actual) is not type(expected):
+                    reason = "type_mismatch"
+                elif actual != expected:
+                    reason = "value_mismatch"
+                if reason:
+                    # field_present розрізняє відсутність ключа та наявний null.
+                    # Типи також пояснюють різницю між 1, true та "1".
+                    failed_checks.append({
+                        "path": list(predicate["path"]),
+                        "field_present": present,
+                        "expected": expected,
+                        "actual": actual,
+                        "expected_type": type(expected).__name__,
+                        "actual_type": type(actual).__name__ if present else "missing",
+                        "reason": reason,
+                    })
+            if failed_checks:
+                rejected_events.append({"record_id": event["record_id"],
+                                        "checks": failed_checks})
+            else:
+                # Порожній selector, як і раніше, охоплює всі вибрані докази.
+                candidates.append(event)
+
+        issues = []
+        for event in candidates:
+            for path in requirement["required_fields"]:
+                present, value = read_evidence_field(event, path)
+                reason = None
+                if not present:
+                    reason = "missing"
+                elif value is None:
+                    reason = "null"
+                elif isinstance(value, str) and not value.strip():
+                    reason = "empty"
+                elif isinstance(value, (list, dict)) and not value:
+                    reason = "empty"
+                # False та 0 — наявні значення; не використовуємо if not value.
+                if reason:
+                    issues.append({"record_id": event["record_id"], "path": list(path),
+                                   "reason": reason})
+
+        enough_events = len(candidates) >= requirement["min_count"]
+        status = "sufficient" if enough_events and not issues else "insufficient_data"
+        reasons = []
+        if not enough_events:
+            reasons.append("Fewer matching selected events than required.")
+        if issues:
+            reasons.append("Required fields are missing, null or empty in matching events.")
+        checks.append({
+            "id": requirement["id"], "status": status,
+            "min_count": requirement["min_count"], "matched_event_count": len(candidates),
+            "matched_record_ids": [event["record_id"] for event in candidates],
+            "field_issues": issues,
+            "rejected_events": rejected_events,
+            "reason": " ".join(reasons) if reasons else "The declared requirement is satisfied.",
+        })
+
+    sufficient = bool(selected_events) and all(c["status"] == "sufficient" for c in checks)
+    return {
+        "status": "sufficient" if sufficient else "insufficient_data",
+        "scope": "selected_events", "requirements": checks,
+        "reason": ("All declared telemetry requirements are satisfied."
+                   if sufficient else "Declared telemetry requirements are not satisfied."),
+        "limitations": "Checks prepared event fields only; does not verify raw XML normalization "
+                       "or prove audit policy configuration or causal attribution.",
+    }
+
+
 def evaluate_test_case(test_case, session_metadata, events, event_results):
+    # Прямі виклики мають ті самі гарантії контракту, що й CLI.
+    validate_test_case(test_case)
     selected_events = resolve_test_evidence(
         test_case, session_metadata, events
     )
@@ -536,6 +638,7 @@ def evaluate_test_case(test_case, session_metadata, events, event_results):
         result["Selection"] is None for result in selected_results
     )
 
+    telemetry = evaluate_telemetry(test_case, selected_events)
     expected = test_case["expectation"]["expected_rule_match"]
 
     evaluation = {
@@ -554,7 +657,8 @@ def evaluate_test_case(test_case, session_metadata, events, event_results):
             result["Selection"] is True for result in other_results
         ),
         "missing_result_ids": partitions["missing_result_ids"],
-        "telemetry_status": "not_assessed",
+        "telemetry_status": telemetry["status"],
+        "telemetry": telemetry,
         "status": "insufficient_data",
         "reason": "",
     }
@@ -582,6 +686,9 @@ def evaluate_test_case(test_case, session_metadata, events, event_results):
             "Some selected events were skipped; "
             "the selected evidence was not fully evaluated."
         )
+
+    elif telemetry["status"] == "insufficient_data":
+        evaluation["reason"] = "Declared telemetry requirements are not satisfied."
 
     else:
         observed = matched > 0

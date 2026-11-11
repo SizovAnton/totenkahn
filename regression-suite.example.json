@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "suite_id": "manual-users-regression",
+  "description": "Compare explicitly chosen rules on saved manual evidence.",
+  "cases": [
+    {
+      "test_case": "test-case.v2.example.json",
+      "session": "runs/bd045787-b8ea-4f94-ba1e-611b7098a30e"
+    }
+  ]
+}

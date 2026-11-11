@@ -1,0 +1,61 @@
+[
+  {
+    "record_id": "positive",
+    "event_id": "demo",
+    "computer": "synthetic-host",
+    "system_time": "2026-11-10T00:00:00Z",
+    "channel": "DVP-Demo/Operational",
+    "provider": "DVP-Demo",
+    "source": {
+      "channel": "DVP-Demo/Operational",
+      "provider": "DVP-Demo",
+      "description": "Synthetic regression example",
+      "product": "windows",
+      "service": "dvp-demo",
+      "category": null
+    },
+    "data_fields": {
+      "marker": "new",
+      "context": "available"
+    }
+  },
+  {
+    "record_id": "negative",
+    "event_id": "demo",
+    "computer": "synthetic-host",
+    "system_time": "2026-11-10T00:00:00Z",
+    "channel": "DVP-Demo/Operational",
+    "provider": "DVP-Demo",
+    "source": {
+      "channel": "DVP-Demo/Operational",
+      "provider": "DVP-Demo",
+      "description": "Synthetic regression example",
+      "product": "windows",
+      "service": "dvp-demo",
+      "category": null
+    },
+    "data_fields": {
+      "marker": "benign",
+      "context": "available"
+    }
+  },
+  {
+    "record_id": "insufficient",
+    "event_id": "demo",
+    "computer": "synthetic-host",
+    "system_time": "2026-11-10T00:00:00Z",
+    "channel": "DVP-Demo/Operational",
+    "provider": "DVP-Demo",
+    "source": {
+      "channel": "DVP-Demo/Operational",
+      "provider": "DVP-Demo",
+      "description": "Synthetic regression example",
+      "product": "windows",
+      "service": "dvp-demo",
+      "category": null
+    },
+    "data_fields": {
+      "marker": "new"
+    }
+  }
+]

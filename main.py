@@ -6,6 +6,8 @@ from pathlib import Path
 import json
 from copy import deepcopy
 from rich.console import Console, Group
+from rich.table import Table
+from rich.text import Text
 
 
 from displaying.reviw import build_event_review_view, build_atomic_runs_view
@@ -13,6 +15,7 @@ from displaying.table import build_report_metadata_view
 from handlers.correlation import (
     correlate_processes,
     link_atomic_runs)
+from handlers.detection_context import build_detection_context
 from handlers.events import process_events, config_handler
 from handlers.file_handlers import (
     load_csv_file,
@@ -33,10 +36,12 @@ from reporting.report import (
     save_report_json,
     summarize_channels,
     evaluate_manual_expectation,
-    evaluate_test_case)
+    evaluate_test_case,
+    resolve_test_evidence)
 
 from reporting.html_report import save_report_html
 from scripts.check_live_run import run_live_session
+from reporting.regression import run_regression, save_regression_report
 
 def main():
     if getattr(sys, 'frozen', False):
@@ -49,9 +54,8 @@ def main():
 
     parser.add_argument(
         "--rule",
-        required=True,
         type=Path,
-        help="Path to sigma .yaml",
+        help="Path to Sigma YAML; required outside regression mode",
     )
     source_group.add_argument(
         "--session",
@@ -95,7 +99,56 @@ def main():
         help="Path to a test case JSON; requires --session"
     )
 
+    source_group.add_argument(
+        "--regression-suite", type=Path,
+        help="Compare two rules on a saved regression suite; no live collection",
+    )
+    parser.add_argument("--baseline-rule", type=Path, help="Baseline Sigma YAML for regression")
+    parser.add_argument("--candidate-rule", type=Path, help="Candidate Sigma YAML for regression")
+    parser.add_argument("--output-dir", type=Path, help="Regression report directory")
+
     args = parser.parse_args()
+    if args.regression_suite is not None:
+        # Регресія — окремий режим. Не запускає колектор або Atomic.
+        if (args.rule is not None or args.test_case is not None or args.test_context is not None
+                or args.execution_log is not None or args.atomic_test is not None
+                or args.show_correlation):
+            parser.error("Regression mode cannot be combined with single-run options")
+        if args.baseline_rule is None or args.candidate_rule is None:
+            parser.error("--regression-suite requires --baseline-rule and --candidate-rule")
+        try:
+            regression = run_regression(args.regression_suite, args.baseline_rule, args.candidate_rule)
+            if args.output_dir is not None:
+                output_dir = args.output_dir
+            else:
+                config = load_configuration(project_dir / "config" / "default.config",
+                                            project_dir / "config" / "config.json")
+                output_dir = project_dir / config["paths"]["reports_dir"]
+            json_path, html_path = save_regression_report(regression, output_dir)
+        except (OSError, ValueError) as error:
+            parser.error(f"Cannot run regression: {error}")
+        console = Console()
+        console.print("Regression summary: " + json.dumps(regression["summary"]), markup=False)
+        # Text зберігає назви прикладів буквально, без інтерпретації Rich markup.
+        comparison_table = Table(title="Regression cases")
+        for heading in ("Case", "Baseline", "Candidate", "Comparison", "Selected / outside changes"):
+            comparison_table.add_column(heading, overflow="fold")
+        for case in regression["cases"]:
+            selected = sum(change["selected"] for change in case["changed_events"])
+            outside = len(case["changed_events"]) - selected
+            comparison_table.add_row(Text(case["case_id"]), Text(case["baseline"]["status"]),
+                                     Text(case["candidate"]["status"]), Text(case["comparison"]),
+                                     f"{selected} / {outside}")
+        console.print(comparison_table)
+        console.print(f"JSON report saved: {json_path}", markup=False)
+        console.print(f"HTML report saved: {html_path}", markup=False)
+        return regression
+
+    if any(value is not None for value in (args.baseline_rule, args.candidate_rule, args.output_dir)):
+        parser.error("--baseline-rule, --candidate-rule and --output-dir require --regression-suite")
+    if args.rule is None:
+        parser.error("--rule is required outside regression mode")
+
     manual_session = args.manual
 
     if args.test_case is not None and args.session is None:
@@ -394,6 +447,13 @@ def main():
             }
         ]
 
+    if test_case is not None:
+        # Невірну сесію/ID відхиляємо до оцінювання правила та запису звіту.
+        try:
+            resolve_test_evidence(test_case, session_metadata, events)
+        except ValueError as error:
+            parser.error(f"Cannot resolve test evidence: {error}")
+
     event_results = report_handler(events, sigma_rule)
     report = build_rule_report(sigma_rule, event_results, linked_runs)
 
@@ -469,6 +529,10 @@ def main():
     report["Event Evidence"] = {
         event["record_id"]: deepcopy(event) for event in events
     }
+
+    report["Detection Context"] = build_detection_context(events, {
+        "rule": {result["Log Record ID"]: result["Selection"] for result in event_results}
+    })
 
     if manual_session:
         saved_test_context = scenario.get("test_context")

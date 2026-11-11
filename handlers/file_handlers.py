@@ -3,6 +3,8 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import yaml
 import json
+import math
+from handlers.detection_context import validate_context_profile
 from hashlib import sha256
 
 def load_session_metadata(session_dir: Path):
@@ -98,6 +100,8 @@ def load_session_metadata(session_dir: Path):
             raise ValueError(f"Session source profile #{number}: "
                 f"event_categories must be a JSON object")
             
+    for profile in [windows_defaults, *sources]:
+        validate_context_profile(profile)
     return metadata
 
 def load_manual_test_context(path:Path):
@@ -206,12 +210,19 @@ def load_configuration(default_path, override_path):
     if not isinstance(override, dict):
         raise ValueError(f"Configuration must be a JSON object: {override_path}")
 
-    return merge_config(default, override)
+    merged = merge_config(default, override)
+    for profile in [merged['defaults']['windows_event_log'], *merged['sources']]:
+        validate_context_profile(profile)
+    return merged
 
 def load_test_case(path: Path):
     with path.open("r", encoding="utf-8") as file:
         test_case = json.load(file)
 
+    return validate_test_case(test_case)
+
+def validate_test_case(test_case):
+    # Спільна перевірка для JSON-завантаження та прямого виклику оцінювача.
     def require_fields(value, expected, label):
         if not isinstance(value, dict):
             raise ValueError(f"{label} must be an object")
@@ -229,6 +240,13 @@ def load_test_case(path: Path):
                 f"{label}: unknown fields: {', '.join(sorted(unknown))}"
             )
 
+    if not isinstance(test_case, dict):
+        raise ValueError("Test case must be an object")
+
+    version = test_case.get("schema_version")
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("Unsupported test case schema_version")
+
     require_fields(
         test_case,
         {
@@ -238,14 +256,9 @@ def load_test_case(path: Path):
             "description",
             "evidence",
             "expectation",
-        },
+        } | ({"telemetry"} if version == 2 else set()),
         "Test case",
     )
-
-    version = test_case["schema_version"]
-
-    if type(version) is not int or version != 1:
-        raise ValueError("Unsupported test case schema_version")
 
     for field in ("case_id", "session_id", "description"):
         value = test_case[field]
@@ -299,4 +312,121 @@ def load_test_case(path: Path):
     if type(expectation["expected_rule_match"]) is not bool:
         raise ValueError("expected_rule_match must be true or false")
 
+    if version == 2:
+        telemetry = test_case["telemetry"]
+        require_fields(telemetry, {"scope", "requirements"}, "Telemetry")
+        if telemetry["scope"] != "selected_events":
+            raise ValueError("Unsupported telemetry scope")
+        requirements = telemetry["requirements"]
+        if not isinstance(requirements, list) or not requirements:
+            raise ValueError("Telemetry requirements must be a non-empty list")
+
+        def validate_path(path):
+            # Шлях — список точних ключів словника, не Python-вираз або XPath.
+            if (not isinstance(path, list) or not path
+                    or any(not isinstance(key, str) or not key.strip() for key in path)):
+                raise ValueError("Field path must be a non-empty list of non-empty strings")
+
+        requirement_ids = set()
+        for requirement in requirements:
+            require_fields(requirement, {"id", "selector", "min_count", "required_fields"},
+                           "Telemetry requirement")
+            requirement_id = requirement["id"]
+            if not isinstance(requirement_id, str) or not requirement_id.strip():
+                raise ValueError("Telemetry requirement id must be a non-empty string")
+            if requirement_id in requirement_ids:
+                raise ValueError(f"Duplicate telemetry requirement id: {requirement_id}")
+            requirement_ids.add(requirement_id)
+            if type(requirement["min_count"]) is not int or requirement["min_count"] < 1:
+                raise ValueError("Telemetry min_count must be a positive integer")
+
+            selector = requirement["selector"]
+            if not isinstance(selector, list):
+                raise ValueError("Telemetry selector must be a list")
+            paths = set()
+            for predicate in selector:
+                require_fields(predicate, {"path", "equals"}, "Telemetry selector predicate")
+                validate_path(predicate["path"])
+                path_key = tuple(predicate["path"])
+                if path_key in paths:
+                    raise ValueError("Duplicate selector field path")
+                paths.add(path_key)
+                value = predicate["equals"]
+                if (value is not None and type(value) not in (str, int, float, bool)
+                        or type(value) is float and not math.isfinite(value)):
+                    raise ValueError("Selector equals must be a finite JSON scalar")
+
+            fields = requirement["required_fields"]
+            if not isinstance(fields, list):
+                raise ValueError("Telemetry required_fields must be a list")
+            paths = set()
+            for path in fields:
+                validate_path(path)
+                if tuple(path) in paths:
+                    raise ValueError("Duplicate required field path")
+                paths.add(tuple(path))
+
     return test_case
+
+
+def load_regression_suite(path: Path):
+    # Відносні шляхи належать файлу набору, а не поточному каталогу термінала.
+    path = path.resolve()
+    with path.open(encoding="utf-8") as file:
+        suite = json.load(file)
+    if not isinstance(suite, dict) or set(suite) != {"schema_version", "suite_id", "description", "cases"}:
+        raise ValueError("Regression suite must contain schema_version, suite_id, description and cases")
+    if type(suite["schema_version"]) is not int or suite["schema_version"] != 1:
+        raise ValueError("Unsupported regression suite schema_version")
+    for key in ("suite_id", "description"):
+        if not isinstance(suite[key], str) or not suite[key].strip():
+            raise ValueError(f"Suite {key} must be a non-empty string")
+    if not isinstance(suite["cases"], list) or not suite["cases"]:
+        raise ValueError("Regression suite cases must be a non-empty list")
+    entries = []
+    seen = set()
+    for entry in suite["cases"]:
+        if not isinstance(entry, dict) or set(entry) != {"test_case", "session"}:
+            raise ValueError("Suite entries must contain test_case and session only")
+        for key in ("test_case", "session"):
+            if not isinstance(entry[key], str) or not entry[key].strip():
+                raise ValueError(f"Suite entry {key} must be a non-empty path")
+        case_path = (path.parent / entry["test_case"]).resolve()
+        session_dir = (path.parent / entry["session"]).resolve()
+        identity = (case_path, session_dir)
+        if identity in seen:
+            raise ValueError("Duplicate regression suite entry")
+        seen.add(identity)
+        entries.append({"case_path": case_path, "session_dir": session_dir})
+    return suite, entries
+
+
+def load_regression_session(session_dir: Path):
+    # Повторно використовуємо перевірку паспорта: тільки завершена сесія
+    # та підтримувана версія нормалізатора. Legacy не переінтерпретуємо.
+    from handlers.events import config_handler
+
+    metadata = load_session_metadata(session_dir)
+    if metadata is None:
+        raise ValueError("Regression requires a saved session passport")
+    with (session_dir / "events.json").open(encoding="utf-8") as file:
+        events = json.load(file)
+    if not isinstance(events, list):
+        raise ValueError("Session events must be a list")
+    seen = set()
+    for event in events:
+        if not isinstance(event, dict):
+            raise ValueError("Session event must be an object")
+        for key in ("record_id", "channel", "provider", "event_id", "computer", "system_time"):
+            if not isinstance(event.get(key), str) or not event[key].strip():
+                raise ValueError(f"Session event {key} must be a non-empty string")
+        if event["record_id"] in seen:
+            raise ValueError(f"Duplicate event record_id: {event['record_id']}")
+        seen.add(event["record_id"])
+        if not isinstance(event.get("data_fields"), dict):
+            raise ValueError("Session event data_fields must be an object")
+        expected_source = config_handler(event["channel"], event["provider"],
+                                         metadata["profiles_snapshot"], event["event_id"])
+        if event.get("source") != expected_source:
+            raise ValueError("Saved event source does not match session profiles_snapshot")
+    return metadata, events

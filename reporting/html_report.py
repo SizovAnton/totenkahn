@@ -1,8 +1,10 @@
 from html import escape
 from pathlib import Path
 import json
+from reporting.context_view import CONTEXT_STYLES, source_view, render_detection_tree
+from reporting.visuals import VISUAL_STYLES, badge, decision, metrics, legend, evaluation_trace
 
-def render_value(value):
+def render_value(value, *, semantic=False):
     if value is None:
         return '<span class="missing">Not set</span>'
 
@@ -17,7 +19,11 @@ def render_value(value):
 
         for key, nested_value in value.items():
             safe_key = escape(str(key), quote=True)
-            rendered_value = render_value(nested_value)
+            # Статуси фарбуємо лише в даних оцінювання, не в довільних полях події.
+            rendered_value = (badge(nested_value)
+                if semantic and key in {"status", "telemetry_status", "Result", "Comparison"}
+                and (isinstance(nested_value, str) or nested_value is None)
+                else render_value(nested_value, semantic=semantic))
 
             rows.append(
                 "<tr>"
@@ -39,7 +45,7 @@ def render_value(value):
         items = []
 
         for item in value:
-            items.append(f"<li>{render_value(item)}</li>")
+            items.append(f"<li>{render_value(item, semantic=semantic)}</li>")
 
         return '<ol class="values">' + "".join(items) + "</ol>"
 
@@ -69,8 +75,10 @@ def build_html_report(report):
                 "Session Expectation Evaluation": report.get(
                     "Expectation Evaluation"
                 ),
-                "Selected Evidence Evaluation": report.get(
-                    "Test Case Evaluation"
+                "Selected Evidence Evaluation": (
+                    {key: value for key, value in report["Test Case Evaluation"].items()
+                     if key != "telemetry"}
+                    if report.get("Test Case Evaluation") is not None else None
                 ),
                 "Session Conclusion": report.get("Conclusion"),
                 "Rule": report.get("Rule"),
@@ -120,17 +128,23 @@ def build_html_report(report):
                 selected_evidence_ids)
             
         elif section_id == "events":
-            section_body = render_event_review(data, report.get("Event Evidence"))
+            section_body = (render_detection_tree(report.get("Detection Context"), event_anchor)
+                            + render_event_review(data, report.get("Event Evidence")))
         else:
-            section_body = render_value(data)
+            section_body = render_value(data, semantic=section_id == "evaluation")
 
         if (section_id == "evaluation" and report.get("Test Case Evaluation") is not None):
             section_body = (
-                "<p>Selected evidence evaluation checks the rule-match "
-                "expectation on the selected events only. "
-                "Telemetry sufficiency has not been assessed.</p>"
+                "<p>Selected evidence evaluation applies only to the selected events. "
+                "Telemetry checks cover declared requirements in prepared fields; "
+                "they do not prove complete collection or causal attribution.</p>"
+                + render_telemetry_review(report["Test Case Evaluation"],
+                                          report.get("Event Evidence"))
                 + section_body
             )
+
+        if section_id == "evaluation":
+            section_body = metrics(report.get("Events Summary")) + legend() + section_body
 
         content.append(
             f'<section id="{safe_id}">'
@@ -365,6 +379,8 @@ def build_html_report(report):
                 display: none;
             }}
         }}
+    {VISUAL_STYLES}
+    {CONTEXT_STYLES}
     </style>
 </head>
 <body>
@@ -433,14 +449,14 @@ def render_event_cards(evidence, event_explanations, selected_evidence_ids=None)
 
         explanations = event_explanations.get(record_id, [])
 
-        categoties = list(dict.fromkeys(explanation["Result"] for explanation in explanations))
-        serch_text = json.dumps({
+        categories = list(dict.fromkeys(explanation["Result"] for explanation in explanations))
+        search_text = json.dumps({
             "Event": event,
             "Evaluations": explanations
         }, ensure_ascii=False)
 
-        categories_json = json.dumps(categoties, ensure_ascii=False)
-        safe_search_text = escape(serch_text, quote=True)
+        categories_json = json.dumps(categories, ensure_ascii=False)
+        safe_search_text = escape(search_text, quote=True)
         safe_categories = escape(categories_json, quote=True)
 
         evaluation_html = render_event_evaluation(explanations)
@@ -460,17 +476,15 @@ def render_event_cards(evidence, event_explanations, selected_evidence_ids=None)
                 f"{render_value(raw_xml)}"
                 "</details>"
             )
+        # Спочатку завершуємо початковий тег з усіма атрибутами.
+        # Жоден заголовок чи текст не може бути всередині цього тегу.
         cards.append(
             f'<article class="event-card" id="{anchor}" '
-            f"<h3>Event {safe_record_id}</h3>" 
-
-            f"{evidence_label}"
-
-            f"{render_event_summary(explanations)}"
             f'data-search="{safe_search_text}" '
             f'data-results="{safe_categories}">'
             f"<h3>Event {safe_record_id}</h3>"
-
+            f"{evidence_label}"
+            f"{source_view(event)}"
             f"{render_event_summary(explanations)}"
 
             '<details class="event-details">'
@@ -711,7 +725,7 @@ def render_event_summary(explanations):
         seen.add(summary_key)
 
         items.append(
-            f"<li><strong>{escape(result, quote=True)}</strong>: "
+            f"<li>{badge(result)}: "
             f"{escape(reason, quote=True)}</li>"
         )
 
@@ -757,7 +771,7 @@ def render_field_checks(checks):
                 f'<th scope="row">{safe_name}</th>'
                 f"<td>{render_value(check.get('Actual'))}</td>"
                 f"<td>{render_value(check.get('Expected'))}</td>"
-                f"<td>{render_value(check.get('Matched'))}</td>"
+                f"<td>{decision(check.get('Matched'))}</td>"
                 "<td>"
                 f"{render_value(check.get('Reason'))}"
                 f"{extra_html}"
@@ -809,7 +823,8 @@ def render_event_evaluation(explanations):
             }
 
             evaluation_html = (
-                f"{render_value(context)}"
+                f"{evaluation_trace(evaluation)}"
+                f"{render_value(context, semantic=True)}"
                 "<h5>Field checks</h5>"
                 f"{render_field_checks(evaluation.get('Checks'))}"
             )
@@ -973,3 +988,52 @@ document.addEventListener("DOMContentLoaded", () => {
 </script>
 """
 
+
+
+def render_telemetry_review(evaluation, evidence):
+    # Старі звіти залишаються доступними без вигаданих перевірок.
+    telemetry = evaluation.get("telemetry")
+    if telemetry is None:
+        return "<p>Telemetry sufficiency has not been assessed.</p>"
+    blocks = ["<h3>Telemetry requirements</h3>", render_value({
+        key: value for key, value in telemetry.items() if key != "requirements"
+    })]
+    for requirement in telemetry.get("requirements", []):
+        blocks.append('<details class="event-details">')
+        blocks.append("<summary>" + escape(str(requirement["id"]), quote=True)
+                      + " — " + badge(requirement["status"]) + "</summary>")
+        blocks.append(render_value({key: value for key, value in requirement.items()
+                                   if key not in {"matched_record_ids", "field_issues", "rejected_events"}}))
+        blocks.append("<h4>Matching evidence</h4>")
+        for record_id in requirement.get("matched_record_ids", []):
+            blocks.append(render_event_reference({"Log Record ID": record_id}, evidence))
+        if not requirement.get("matched_record_ids"):
+            blocks.append("<p>No selected events matched this requirement.</p>")
+        # Старі звіти без rejected_events залишаються сумісними.
+        # Відхилення селектором не означає відсутність події у сесії.
+        if requirement.get("rejected_events"):
+            blocks.append("<h4>Events excluded by selector</h4>")
+            blocks.append("<p>These selected events did not satisfy the selector. "
+                          "Required-field checks were not run on them.</p>")
+            for rejection in requirement["rejected_events"]:
+                blocks.append('<details class="event-details">')
+                blocks.append("<summary>Event " + escape(str(rejection["record_id"]), quote=True)
+                              + "</summary>")
+                blocks.append(render_event_reference({"Log Record ID": rejection["record_id"]}, evidence))
+                for check in rejection["checks"]:
+                    # Використовуємо render_value: текст доказів не виконується як HTML.
+                    blocks.append(render_value({
+                        "Field path": check["path"],
+                        "Field present": check["field_present"],
+                        "Expected": check["expected"], "Expected type": check["expected_type"],
+                        "Actual": check["actual"], "Actual type": check["actual_type"],
+                        "Reason": check["reason"],
+                    }))
+                blocks.append("</details>")
+        if requirement.get("field_issues"):
+            blocks.append("<h4>Field issues</h4>")
+            for issue in requirement["field_issues"]:
+                blocks.append(render_value({"Field path": issue["path"], "Reason": issue["reason"]}))
+                blocks.append(render_event_reference({"Log Record ID": issue["record_id"]}, evidence))
+        blocks.append("</details>")
+    return "".join(blocks)
