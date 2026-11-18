@@ -4,14 +4,21 @@ from html import escape
 from pathlib import Path
 import json
 from reporting.context_view import CONTEXT_STYLES, source_view, render_detection_tree
-from reporting.visuals import VISUAL_STYLES, badge, decision, metrics, legend, evaluation_trace
+from reporting.visuals import (
+    VISUAL_STYLES,
+    badge,
+    decision,
+    metrics,
+    legend,
+    evaluation_trace,
+)
 
 def render_value(value, *, semantic=False):
     if value is None:
         return '<span class="missing">Not set</span>'
 
     if isinstance(value, bool):
-        return "Yes" if value else "No"
+        return 'Yes' if value else 'No'
 
     if isinstance(value, dict):
         if not value:
@@ -21,24 +28,14 @@ def render_value(value, *, semantic=False):
 
         for key, nested_value in value.items():
             safe_key = escape(str(key), quote=True)
-            # Статуси фарбуємо лише в даних оцінювання, не в довільних полях події.
-            rendered_value = (badge(nested_value)
-                if semantic and key in {"status", "telemetry_status", "Result", "Comparison"}
+            rendered_value = badge(nested_value) if (
+                semantic
+                and (key in {'status', 'telemetry_status', 'Result', 'Comparison'})
                 and (isinstance(nested_value, str) or nested_value is None)
-                else render_value(nested_value, semantic=semantic))
+            ) else render_value(nested_value, semantic=semantic)
+            rows.append(f'<tr><th scope="row">{safe_key}</th><td>{rendered_value}</td></tr>')
 
-            rows.append(
-                "<tr>"
-                f'<th scope="row">{safe_key}</th>'
-                f"<td>{rendered_value}</td>"
-                "</tr>"
-            )
-
-        return(
-            '<table class="fields"><tbody>'
-            + "".join(rows)
-            + "</tbody></table>"
-        )
+        return '<table class="fields"><tbody>' + ''.join(rows) + '</tbody></table>'
 
     if isinstance(value, list):
         if not value:
@@ -47,610 +44,253 @@ def render_value(value, *, semantic=False):
         items = []
 
         for item in value:
-            items.append(f"<li>{render_value(item, semantic=semantic)}</li>")
+            items.append(f'<li>{render_value(item, semantic=semantic)}</li>')
 
-        return '<ol class="values">' + "".join(items) + "</ol>"
+        return '<ol class="values">' + ''.join(items) + '</ol>'
 
     safe_text = escape(str(value), quote=True)
 
-    if safe_text == "":
+    if safe_text == '':
         return '<span class="empty">Empty string</span>'
 
     return f'<pre class="value">{safe_text}</pre>'
 
 def build_html_report(report):
-
     sections = [
         (
-            "passport",
-            "1. Test Overview",
+            'passport',
+            '1. Test Overview',
             {
-                "Report ID": report.get("Report ID"),
-                "Session": report.get("Session"),
-                "Analysis": report.get("Analysis"),
-                "Telemetry Readiness": report.get("Telemetry Readiness"),
+                'Report ID': report.get('Report ID'),
+                'Session': report.get('Session'),
+                'Analysis': report.get('Analysis'),
+                'Telemetry Readiness': report.get('Telemetry Readiness'),
             },
         ),
         (
-            "evaluation",
-            "2. Evaluation Summary and Reasons", {
-                "Events Summary": report.get("Events Summary"),
-                "Session Expectation Evaluation": report.get(
-                    "Expectation Evaluation"
-                ),
-                "Selected Evidence Evaluation": (
-                    {key: value for key, value in report["Test Case Evaluation"].items()
-                     if key != "telemetry"}
-                    if report.get("Test Case Evaluation") is not None else None
-                ),
-                "Session Conclusion": report.get("Conclusion"),
-                "Rule": report.get("Rule"),
+            'evaluation',
+            '2. Evaluation Summary and Reasons',
+            {
+                'Events Summary': report.get('Events Summary'),
+                'Session Expectation Evaluation': report.get('Expectation Evaluation'),
+                'Selected Evidence Evaluation': {key: value for key, value in report['Test Case Evaluation'].items() if key != 'telemetry'} if report.get('Test Case Evaluation') is not None else None,
+                'Session Conclusion': report.get('Conclusion'),
+                'Rule': report.get('Rule'),
             },
         ),
+        ('events', '3. Events with Context', report.get('Event Review')),
+        ('details', '4. Detailed Event Cards', report.get('Event Evidence')),
         (
-            "events",
-            "3. Events with Context",
-            report.get("Event Review"),
-        ),
-        (
-            "details",
-            "4. Detailed Event Cards",
-            report.get("Event Evidence"),
-        ),
-        (
-            "manual-test",
-            "5. Manual Test Context",
+            'manual-test',
+            '5. Manual Test Context',
             {
-                "Collection Context": report.get("Manual Test Context"),
-                "Test Case": report.get("Test Case"),
+                'Collection Context': report.get('Manual Test Context'),
+                'Test Case': report.get('Test Case'),
             },
         ),
     ]
-
     navigation = []
     content = []
-
-    event_explanations = build_event_explanations(report.get("Event Review"))
-
-    test_case = report.get("Test Case")
-
-    selected_evidence_ids = (None if test_case is None else set(test_case["evidence"]["record_ids"]))
+    event_explanations = build_event_explanations(report.get('Event Review'))
+    test_case = report.get('Test Case')
+    selected_evidence_ids = None if test_case is None else set(test_case['evidence']['record_ids'])
 
     for section_id, title, data in sections:
         safe_id = escape(section_id, quote=True)
         safe_title = escape(title, quote=True)
+        navigation.append(f'<li><a href="#{safe_id}">{safe_title}</a></li>')
 
-        navigation.append(
-            f'<li><a href="#{safe_id}">{safe_title}</a></li>'
-        )
-
-        if section_id == "details":
-            section_body = render_event_cards(
-                data, 
-                event_explanations,
-                selected_evidence_ids)
-            
-        elif section_id == "events":
-            section_body = (render_detection_tree(report.get("Detection Context"), event_anchor)
-                            + render_event_review(data, report.get("Event Evidence")))
+        if section_id == 'details':
+            section_body = render_event_cards(data, event_explanations, selected_evidence_ids)
+        elif section_id == 'events':
+            section_body = render_detection_tree(report.get('Detection Context'), event_anchor) + render_event_review(data, report.get('Event Evidence'))
         else:
-            section_body = render_value(data, semantic=section_id == "evaluation")
+            section_body = render_value(data, semantic=section_id == 'evaluation')
 
-        if (section_id == "evaluation" and report.get("Test Case Evaluation") is not None):
-            section_body = (
-                "<p>Selected evidence evaluation applies only to the selected events. "
-                "Telemetry checks cover declared requirements in prepared fields; "
-                "they do not prove complete collection or causal attribution.</p>"
-                + render_telemetry_review(report["Test Case Evaluation"],
-                                          report.get("Event Evidence"))
-                + section_body
-            )
+        if section_id == 'evaluation' and report.get('Test Case Evaluation') is not None:
+            section_body = '<p>Selected evidence evaluation applies only to the selected events. Telemetry checks cover declared requirements in prepared fields; they do not prove complete collection or causal attribution.</p>' + render_telemetry_review(report['Test Case Evaluation'], report.get('Event Evidence')) + section_body
 
-        if section_id == "passport" and report.get("Atomic Lifecycle"):
-            section_body += render_lifecycle(report["Atomic Lifecycle"])
+        if section_id == 'passport' and report.get('Atomic Lifecycle'):
+            section_body += render_lifecycle(report['Atomic Lifecycle'])
 
-        if section_id == "evaluation":
-            section_body = metrics(report.get("Events Summary")) + legend() + section_body
+        if section_id == 'evaluation':
+            section_body = metrics(report.get('Events Summary')) + legend() + section_body
 
-        content.append(
-            f'<section id="{safe_id}">'
-            f"<h2>{safe_title}</h2>"
-            f"{section_body}"
-            "</section>"
-        )
+        content.append(f'<section id="{safe_id}"><h2>{safe_title}</h2>{section_body}</section>')
 
-    navigation_html = "\n".join(navigation)
-    category_navigation = render_category_navigation(report.get("Event Review"), event_explanations)
-    navigation_block = (
-        '<nav class="report-navigation" '
-        'aria-labelledby="report-navigation-title">'
-        '<h2 id="report-navigation-title">Report navigation</h2>'
-        f"<ol>{navigation_html}</ol>"
-        f"{category_navigation}"
-        "</nav>"
-    )
-    content_html = "\n".join([
-        content[0],
-        navigation_block,
-        render_event_search(),
-        *content[1:],
-    ])
+    navigation_html = '\n'.join(navigation)
+    category_navigation = render_category_navigation(report.get('Event Review'), event_explanations)
+    navigation_block = f'<nav class="report-navigation" aria-labelledby="report-navigation-title"><h2 id="report-navigation-title">Report navigation</h2><ol>{navigation_html}</ol>{category_navigation}</nav>'
+    content_html = '\n'.join([content[0], navigation_block, render_event_search(), *content[1:]])
 
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DVP — Report</title>
-        
-    <style>
-        body {{
-            margin: 0;
-            background: #f3f5f8;
-            color: #172033;
-            font-family: system-ui, sans-serif;
-            line-height: 1.5;
-        }}
-        main {{
-            max-width: 1200px;
-            margin: auto;
-            padding: 24px;
-        }}
-        .report-navigation {{
-            background: white;
-            border: 1px solid #dce2ea;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
-        }}
-        .report-navigation ol {{
-            display: grid;
-            grid-template-columns: repeat(
-                auto-fit, minmax(min(100%, 240px), 1fr)
-            );
-            gap: 12px 24px;
-            margin: 0;
-            padding-left: 24px;
-        }}
-        .back-to-top {{
-            position: fixed;
-            right: 16px;
-            bottom: 16px;
-            z-index: 10;
-            padding: 10px 16px;
-            border-radius: 6px;
-            background: #174ea6;
-            color: white;
-            text-decoration: none;
-            box-shadow: 0 2px 8px #0003;
-        }}
-        a:focus-visible {{
-            outline: 3px solid #b45309;
-            outline-offset: 4px;
-        }}
-        body {{
-            padding-bottom: 80px;
-        }}
-        @media print {{
-            .report-navigation,
-            .back-to-top {{
-                display: none;
-            }}
-        }}
-        a {{
-            color: #174ea6;
-        }}
-        section {{
-            background: white;
-            border: 1px solid #dce2ea;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
-        }}
-        h2 {{
-            margin-top: 0;
-        }}
-        .fields {{
-            width: 100%;
-            border-collapse: collapse;
-        }}
-        .fields th, .fields td {{
-            border: 1px solid #dce2ea;
-            padding: 8px;
-            text-align: left;
-            vertical-align: top;
-            overflow-wrap: anywhere;
-        }}
-        .fields th {{
-            background: #f7f9fc;
-        }}
-        .value {{
-            margin: 0;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            font-family: ui-monospace, monospace;
-        }}
-        .missing, .empty {{
-            color: #596579;
-            font-style: italic;
-        }}
-        .values {{
-            padding-left: 24px;
-        }}
-        .event-card 
-        {{
-            border: 1px solid #dce2ea;
-            border-radius: 6px;
-            padding: 16px;
-            margin-bottom: 20px;
-            scroll-margin-top: 16px;
-        }}
-        .event-card h3 {{
-            margin-top: 0;
-            overflow-wrap: anywhere;
-        }}
-        .event-card:target {{
-            border-color: #174ea6;
-        }}
-        .raw-xml {{
-            margin-top: 16px;
-        }}
-        .raw-xml summary {{
-            cursor: pointer;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }}
-        .event-summary {{
-            margin: 12px 0;
-            padding-left: 24px;
-            overflow-wrap: anywhere;
-        }}
-        .event-details {{
-            margin-top: 12px;
-            border-top: 1px solid #dce2ea;
-            padding-top: 12px;
-        }}
-        .event-details > summary {{
-            cursor: pointer;
-            font-weight: 600;
-        }}
-        .event-details[open] > summary {{
-            margin-bottom: 12px;
-        }}
-        summary:focus-visible {{
-            outline: 3px solid #b45309;
-            outline-offset: 4px;
-        }}
-        .evaluation-group + .evaluation-group {{
-            margin-top: 24px;
-            padding-top: 16px;
-            border-top: 2px solid #dce2ea;
-        }}
-        .checks-scroll {{
-            max-width: 100%;
-            overflow-x: auto;
-            margin: 12px 0;
-        }}
-        .checks-table {{
-            min-width: 760px;
-        }}
-        .checks-table > caption {{
-            text-align: left;
-            font-weight: 600;
-            padding-bottom: 8px;
-        }}
-        .checks-table > tbody > tr > th {{
-            min-width: 140px;
-        }}
-        .checks-table > tbody > tr > td > details {{
-            margin-top: 12px;
-        }}
-        .event-details > .fields > tbody > tr > th {{
-            width: 24%;
-            min-width: 120px;
-        }}
-        .event-group + .event-group {{
-            margin-top: 24px;
-            padding-top: 20px;
-            border-top: 2px solid #dce2ea;
-        }}
-        [hidden] {{
-            display: none !important;
-        }}
-        #event-search-panel {{
-            background: white;
-            border: 1px solid #dce2ea;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
-        }}
-        #event-search-panel label {{
-            display: block;
-            margin-top: 12px;
-        }}
-        #event-search-panel input,
-        #event-search-panel select {{
-            box-sizing: border-box;
-            width: 100%;
-            padding: 8px;
-            margin-top: 4px;
-        }}
-        #clear-event-filters {{
-            margin-top: 12px;
-            padding: 8px 12px;
-            cursor: pointer;
-        }}
-        @media print {{
-            #event-search-panel {{
-                display: none;
-            }}
-        }}
-    {VISUAL_STYLES}
-    {CONTEXT_STYLES}
-    </style>
-</head>
-<body>
-    <main id="report-top">
-        <h1>DVP — Report</h1>
-        {content_html}
-    </main>
-    <a class="back-to-top" href="#report-top">Back to top</a>
-</body>
-</html>
-"""
+    return f'<!doctype html>\n<html lang="en">\n<head>\n    <meta charset="utf-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1">\n    <title>TOTENKAHN — Report</title>\n        \n    <style>\n        body {{\n            margin: 0;\n            background: #f3f5f8;\n            color: #172033;\n            font-family: system-ui, sans-serif;\n            line-height: 1.5;\n        }}\n        main {{\n            max-width: 1200px;\n            margin: auto;\n            padding: 24px;\n        }}\n        .report-navigation {{\n            background: white;\n            border: 1px solid #dce2ea;\n            border-radius: 8px;\n            padding: 20px;\n            margin-bottom: 24px;\n        }}\n        .report-navigation ol {{\n            display: grid;\n            grid-template-columns: repeat(\n                auto-fit, minmax(min(100%, 240px), 1fr)\n            );\n            gap: 12px 24px;\n            margin: 0;\n            padding-left: 24px;\n        }}\n        .back-to-top {{\n            position: fixed;\n            right: 16px;\n            bottom: 16px;\n            z-index: 10;\n            padding: 10px 16px;\n            border-radius: 6px;\n            background: #174ea6;\n            color: white;\n            text-decoration: none;\n            box-shadow: 0 2px 8px #0003;\n        }}\n        a:focus-visible {{\n            outline: 3px solid #b45309;\n            outline-offset: 4px;\n        }}\n        body {{\n            padding-bottom: 80px;\n        }}\n        @media print {{\n            .report-navigation,\n            .back-to-top {{\n                display: none;\n            }}\n        }}\n        a {{\n            color: #174ea6;\n        }}\n        section {{\n            background: white;\n            border: 1px solid #dce2ea;\n            border-radius: 8px;\n            padding: 20px;\n            margin-bottom: 24px;\n        }}\n        h2 {{\n            margin-top: 0;\n        }}\n        .fields {{\n            width: 100%;\n            border-collapse: collapse;\n        }}\n        .fields th, .fields td {{\n            border: 1px solid #dce2ea;\n            padding: 8px;\n            text-align: left;\n            vertical-align: top;\n            overflow-wrap: anywhere;\n        }}\n        .fields th {{\n            background: #f7f9fc;\n        }}\n        .value {{\n            margin: 0;\n            white-space: pre-wrap;\n            overflow-wrap: anywhere;\n            font-family: ui-monospace, monospace;\n        }}\n        .missing, .empty {{\n            color: #596579;\n            font-style: italic;\n        }}\n        .values {{\n            padding-left: 24px;\n        }}\n        .event-card \n        {{\n            border: 1px solid #dce2ea;\n            border-radius: 6px;\n            padding: 16px;\n            margin-bottom: 20px;\n            scroll-margin-top: 16px;\n        }}\n        .event-card h3 {{\n            margin-top: 0;\n            overflow-wrap: anywhere;\n        }}\n        .event-card:target {{\n            border-color: #174ea6;\n        }}\n        .raw-xml {{\n            margin-top: 16px;\n        }}\n        .raw-xml summary {{\n            cursor: pointer;\n            font-weight: 600;\n            margin-bottom: 8px;\n        }}\n        .event-summary {{\n            margin: 12px 0;\n            padding-left: 24px;\n            overflow-wrap: anywhere;\n        }}\n        .event-details {{\n            margin-top: 12px;\n            border-top: 1px solid #dce2ea;\n            padding-top: 12px;\n        }}\n        .event-details > summary {{\n            cursor: pointer;\n            font-weight: 600;\n        }}\n        .event-details[open] > summary {{\n            margin-bottom: 12px;\n        }}\n        summary:focus-visible {{\n            outline: 3px solid #b45309;\n            outline-offset: 4px;\n        }}\n        .evaluation-group + .evaluation-group {{\n            margin-top: 24px;\n            padding-top: 16px;\n            border-top: 2px solid #dce2ea;\n        }}\n        .checks-scroll {{\n            max-width: 100%;\n            overflow-x: auto;\n            margin: 12px 0;\n        }}\n        .checks-table {{\n            min-width: 760px;\n        }}\n        .checks-table > caption {{\n            text-align: left;\n            font-weight: 600;\n            padding-bottom: 8px;\n        }}\n        .checks-table > tbody > tr > th {{\n            min-width: 140px;\n        }}\n        .checks-table > tbody > tr > td > details {{\n            margin-top: 12px;\n        }}\n        .event-details > .fields > tbody > tr > th {{\n            width: 24%;\n            min-width: 120px;\n        }}\n        .event-group + .event-group {{\n            margin-top: 24px;\n            padding-top: 20px;\n            border-top: 2px solid #dce2ea;\n        }}\n        [hidden] {{\n            display: none !important;\n        }}\n        #event-search-panel {{\n            background: white;\n            border: 1px solid #dce2ea;\n            border-radius: 8px;\n            padding: 20px;\n            margin-bottom: 24px;\n        }}\n        #event-search-panel label {{\n            display: block;\n            margin-top: 12px;\n        }}\n        #event-search-panel input,\n        #event-search-panel select {{\n            box-sizing: border-box;\n            width: 100%;\n            padding: 8px;\n            margin-top: 4px;\n        }}\n        #clear-event-filters {{\n            margin-top: 12px;\n            padding: 8px 12px;\n            cursor: pointer;\n        }}\n        @media print {{\n            #event-search-panel {{\n                display: none;\n            }}\n        }}\n    {VISUAL_STYLES}\n    {CONTEXT_STYLES}\n    </style>\n</head>\n<body>\n    <main id="report-top">\n        <h1>TOTENKAHN — Report</h1>\n        {content_html}\n    </main>\n    <a class="back-to-top" href="#report-top">Back to top</a>\n</body>\n</html>\n'
 
 def save_report_html(report, output_path: Path):
     html_document = build_html_report(report)
-    temporary_path = output_path.with_suffix(
-        output_path.suffix + ".tmp"
-    )
+    temporary_path = output_path.with_suffix(output_path.suffix + '.tmp')
 
-    with temporary_path.open("w", encoding="utf-8") as file:
+    with temporary_path.open('w', encoding='utf-8') as file:
         file.write(html_document)
 
     temporary_path.replace(output_path)
 
 def event_anchor(record_id):
-    return "event-" + record_id.encode("utf-8").hex()
+    return 'event-' + record_id.encode('utf-8').hex()
 
 def render_event_cards(evidence, event_explanations, selected_evidence_ids=None):
     if evidence is None:
-        return "<p>Full event evidence is unavailable in this report.</p>"
+        return '<p>Full event evidence is unavailable in this report.</p>'
 
     if not isinstance(evidence, dict):
-        raise ValueError("Event Evidence must be an object")
+        raise ValueError('Event Evidence must be an object')
 
     if not evidence:
-        return "<p>No events were collected.</p>"
+        return '<p>No events were collected.</p>'
 
     cards = []
 
     for record_id, event in evidence.items():
         if not isinstance(record_id, str) or not record_id:
-            raise ValueError("Event evidence ID must be a non-empty string")
+            raise ValueError('Event evidence ID must be a non-empty string')
 
         if not isinstance(event, dict):
-            raise ValueError("Event evidence must be an object")
+            raise ValueError('Event evidence must be an object')
 
-        if event.get("record_id") != record_id:
-            raise ValueError("Event evidence key does not match record_id")
+        if event.get('record_id') != record_id:
+            raise ValueError('Event evidence key does not match record_id')
 
         anchor = event_anchor(record_id)
         safe_record_id = escape(record_id, quote=True)
 
         if selected_evidence_ids is None:
-            evidence_label = ""
+            evidence_label = ''
         elif record_id in selected_evidence_ids:
-            evidence_label = (
-                '<p class="evidence-membership">'
-                "<strong>Selected test evidence</strong>"
-                "</p>"
-            )
+            evidence_label = '<p class="evidence-membership"><strong>Selected test evidence</strong></p>'
         else:
-            evidence_label = (
-                '<p class="evidence-membership">'
-                "Outside selected evidence"
-                "</p>"
-            )
+            evidence_label = '<p class="evidence-membership">Outside selected evidence</p>'
 
         explanations = event_explanations.get(record_id, [])
-
-        categories = list(dict.fromkeys(explanation["Result"] for explanation in explanations))
-        search_text = json.dumps({
-            "Event": event,
-            "Evaluations": explanations
-        }, ensure_ascii=False)
-
+        categories = list(dict.fromkeys((explanation['Result'] for explanation in explanations)))
+        search_text = json.dumps({'Event': event, 'Evaluations': explanations}, ensure_ascii=False)
         categories_json = json.dumps(categories, ensure_ascii=False)
         safe_search_text = escape(search_text, quote=True)
         safe_categories = escape(categories_json, quote=True)
-
         evaluation_html = render_event_evaluation(explanations)
-
-        fields = {
-            key: value for key, value in event.items() if key != "raw_xml"
-        }
-
-        raw_xml = event.get("raw_xml")
+        fields = {key: value for key, value in event.items() if key != 'raw_xml'}
+        raw_xml = event.get('raw_xml')
 
         if raw_xml is None:
-            xml_block = "<p>Raw XML is unavailable.</p>"
+            xml_block = '<p>Raw XML is unavailable.</p>'
         else:
-            xml_block = (
-                '<details class="raw-xml">'
-                "<summary>Raw XML</summary>"
-                f"{render_value(raw_xml)}"
-                "</details>"
-            )
-        # Спочатку завершуємо початковий тег з усіма атрибутами.
-        # Жоден заголовок чи текст не може бути всередині цього тегу.
+            xml_block = f'<details class="raw-xml"><summary>Raw XML</summary>{render_value(raw_xml)}</details>'
+
         cards.append(
-            f'<article class="event-card" id="{anchor}" '
-            f'data-search="{safe_search_text}" '
-            f'data-results="{safe_categories}">'
-            f"<h3>Event {safe_record_id}</h3>"
-            f"{evidence_label}"
-            f"{source_view(event)}"
-
-            '<section class="event-evaluation">'
-            "<h4>Rule evaluation</h4>"
-            f"{evaluation_html}"
-            "</section>"
-
-            '<details class="event-details">'
-            "<summary>Event fields</summary>"
-            f"{render_event_fields(fields)}"
-            "</details>"
-
-            f"{xml_block}"
-            "</article>"
+            f'<article class="event-card" id="{anchor}" data-search="{safe_search_text}" data-results="{safe_categories}"><h3>Event {safe_record_id}</h3>{evidence_label}{source_view(event)}<section class="event-evaluation"><h4>Rule evaluation</h4>{evaluation_html}</section><details class="event-details"><summary>Event fields</summary>{render_event_fields(fields)}</details>{xml_block}</article>',
         )
-    return "\n".join(cards)
+
+    return '\n'.join(cards)
 
 def render_event_reference(reference, evidence):
     if not isinstance(reference, dict):
-        raise ValueError("Event reference must be an object")
+        raise ValueError('Event reference must be an object')
 
-    record_id = reference.get("Log Record ID")
-
+    record_id = reference.get('Log Record ID')
     reference_fields = render_value(reference)
 
     if (
-        not isinstance(record_id, str)
-        or not record_id
-        or not isinstance(evidence, dict)
-        or record_id not in evidence
+        (not isinstance(record_id, str))
+        or (not record_id)
+        or (not isinstance(evidence, dict))
+        or (record_id not in evidence)
     ):
-        return (
-            reference_fields
-            + '<p class="missing">Full event evidence is unavailable.</p>'
-        )
+        return reference_fields + '<p class="missing">Full event evidence is unavailable.</p>'
 
     anchor = event_anchor(record_id)
 
-    return (
-        reference_fields
-        + f'<p><a href="#{anchor}">View full event</a></p>'
-    )
+    return reference_fields + f'<p><a href="#{anchor}">View full event</a></p>'
 
 def render_event_review(review, evidence):
     if review is None:
-        return "<p>Event review is unavailable.</p>"
+        return '<p>Event review is unavailable.</p>'
 
     if not isinstance(review, dict):
-        raise ValueError("Event Review must be an object")
+        raise ValueError('Event Review must be an object')
 
     if not review:
-        return "<p>No event results are available.</p>"
+        return '<p>No event results are available.</p>'
 
     categories = []
 
     for category, groups in review.items():
         if not isinstance(groups, list):
-            raise ValueError("Event review groups must be a list")
+            raise ValueError('Event review groups must be a list')
 
         safe_category = escape(str(category), quote=True)
         group_blocks = []
 
         for group in groups:
             if not isinstance(group, dict):
-                raise ValueError("Event review group must be an object")
+                raise ValueError('Event review group must be an object')
 
-            references = group.get("References", [])
+            references = group.get('References', [])
 
             if not isinstance(references, list):
-                raise ValueError("Group References must be a list")
+                raise ValueError('Group References must be a list')
 
-            group_fields = {
-                key: value
-                for key, value in group.items()
-                if key not in ("References", "Evidence")
-            }
-
-            group_explanations = [{
-                "Result": category,
-                "Group Reference": group.get("Group Reference"),
-                "Evaluation": group.get("Evidence")
-            }]
-
-            reference_items = [
-                f"<li>{render_event_reference(reference, evidence)}</li>"
-                for reference in references
+            group_fields = {key: value for key, value in group.items() if key not in ('References', 'Evidence')}
+            group_explanations = [
+                {
+                    'Result': category,
+                    'Group Reference': group.get('Group Reference'),
+                    'Evaluation': group.get('Evidence'),
+                },
             ]
-
-            references_html = (
-                '<ol class="values">' + "".join(reference_items) + "</ol>"
-                if reference_items
-                else "<p>No event references are available.</p>"
-            )
-
+            reference_items = [f'<li>{render_event_reference(reference, evidence)}</li>' for reference in references]
+            references_html = '<ol class="values">' + ''.join(reference_items) + '</ol>' if reference_items else '<p>No event references are available.</p>'
             group_blocks.append(
-                '<div class="event-group">'
-                f"{render_value(group_fields)}"
-
-                f"{render_event_summary(group_explanations)}"
-
-                '<details class="event-details">'
-                "<summary>Rule evaluation</summary>"
-                f"{render_event_evaluation(group_explanations)}"
-                "</details>"
-
-                '<details class="event-details">'
-                "<summary>Event references</summary>"
-                f"{references_html}"
-                "</details>"
-                "</div>"
+                f'<div class="event-group">{render_value(group_fields)}{render_event_summary(group_explanations)}<details class="event-details"><summary>Rule evaluation</summary>{render_event_evaluation(group_explanations)}</details><details class="event-details"><summary>Event references</summary>{references_html}</details></div>',
             )
 
-        groups_html = (
-            "\n".join(group_blocks)
-            if group_blocks
-            else "<p>No event groups in this category.</p>"
-        )
+        groups_html = '\n'.join(group_blocks) if group_blocks else '<p>No event groups in this category.</p>'
         anchor = category_anchor(category)
+        categories.append(f'<h3 id="{anchor}">{safe_category}</h3>{groups_html}')
 
-        categories.append(
-            f'<h3 id="{anchor}">{safe_category}</h3>'
-            f"{groups_html}"
-        )
-
-    return "\n".join(categories)
+    return '\n'.join(categories)
 
 def build_event_explanations(review):
     explanations = {}
 
     if review is None:
         return explanations
-    
+
     if not isinstance(review, dict):
-        raise ValueError("Event Review must be an object")
+        raise ValueError('Event Review must be an object')
 
     for category, groups in review.items():
         if not isinstance(groups, list):
-            raise ValueError("Event review groups must be a list")
+            raise ValueError('Event review groups must be a list')
 
         for group in groups:
             if not isinstance(group, dict):
-                raise ValueError("Event review group must be an object")
+                raise ValueError('Event review group must be an object')
 
-            references = group.get("References", [])
+            references = group.get('References', [])
 
             if not isinstance(references, list):
-                raise ValueError("Group References must be a list")
+                raise ValueError('Group References must be a list')
 
             explanation = {
-                "Result": category,
-                "Group Reference": group.get("Group Reference"),
-                "Evaluation": group.get("Evidence")
+                'Result': category,
+                'Group Reference': group.get('Group Reference'),
+                'Evaluation': group.get('Evidence'),
             }
-
             seen_ids = set()
 
             for reference in references:
                 if not isinstance(reference, dict):
-                    raise ValueError("Event reference must be an object")
+                    raise ValueError('Event reference must be an object')
 
-                record_id = reference.get("Log Record ID")
+                record_id = reference.get('Log Record ID')
 
                 if not isinstance(record_id, str) or not record_id:
                     continue
@@ -659,68 +299,48 @@ def build_event_explanations(review):
                     continue
 
                 seen_ids.add(record_id)
-
                 explanations.setdefault(record_id, []).append(explanation)
 
     return explanations
 
 def category_anchor(category):
-    return "category-"+category.encode("utf-8").hex()
+    return 'category-' + category.encode('utf-8').hex()
 
 def render_category_navigation(review, event_explanations):
     if not review:
-        return ""
+        return ''
 
     links = []
 
     for category in review:
         if not isinstance(category, str):
-            raise ValueError("Event review category must be a string")
+            raise ValueError('Event review category must be a string')
 
         event_count = sum(
-            1
-            for explanations in event_explanations.values()
-            if any(
-                explanation["Result"] == category
-                for explanation in explanations
-            )
+            (1 for explanations in event_explanations.values() if any((explanation['Result'] == category for explanation in explanations))),
         )
-
         anchor = category_anchor(category)
         safe_category = escape(category, quote=True)
-
         links.append(
-            f'<li><a href="#{anchor}">'
-            f"{safe_category} — {event_count} unique events"
-            "</a></li>"
+            f'<li><a href="#{anchor}">{safe_category} — {event_count} unique events</a></li>',
         )
 
-    return (
-        "<h3>Results by category</h3>"
-        '<p>Counts use unique event IDs within each category.</p>'
-        "<ul>"
-        + "".join(links)
-        + "</ul>"
-    )
+    return '<h3>Results by category</h3><p>Counts use unique event IDs within each category.</p><ul>' + ''.join(links) + '</ul>'
 
 def render_event_summary(explanations):
     if not explanations:
-        return "<p>No rule evaluation is recorded for this event.</p>"
+        return '<p>No rule evaluation is recorded for this event.</p>'
 
     items = []
     seen = set()
 
     for explanation in explanations:
-        result = str(explanation.get("Result", "Unknown"))
-        evaluation = explanation.get("Evaluation")
-
-        reason = (
-            explain_evaluation(evaluation)["summary"]
-            if isinstance(evaluation, dict) else None
-        )
+        result = str(explanation.get('Result', 'Unknown'))
+        evaluation = explanation.get('Evaluation')
+        reason = explain_evaluation(evaluation)['summary'] if isinstance(evaluation, dict) else None
 
         if not isinstance(reason, str) or not reason.strip():
-            reason = "No explanation was recorded."
+            reason = 'No explanation was recorded.'
 
         summary_key = (result, reason)
 
@@ -728,134 +348,75 @@ def render_event_summary(explanations):
             continue
 
         seen.add(summary_key)
+        items.append(f'<li>{badge(result)}: {escape(reason, quote=True)}</li>')
 
-        items.append(
-            f"<li>{badge(result)}: "
-            f"{escape(reason, quote=True)}</li>"
-        )
-
-    return '<ul class="event-summary">' + "".join(items) + "</ul>"
+    return '<ul class="event-summary">' + ''.join(items) + '</ul>'
 
 def render_field_checks(checks):
     if checks is None:
-        return "<p>Field checks are unavailable.</p>"
+        return '<p>Field checks are unavailable.</p>'
 
     if not isinstance(checks, dict):
-        raise ValueError("Field checks must be an object")
+        raise ValueError('Field checks must be an object')
 
     if not checks:
-        return "<p>No field checks were recorded.</p>"
+        return '<p>No field checks were recorded.</p>'
 
     blocks = []
 
     for block_name, block_checks in checks.items():
         if not isinstance(block_checks, dict):
-            raise ValueError("Block checks must be an object")
+            raise ValueError('Block checks must be an object')
 
         rows = []
 
         for check_name, check in block_checks.items():
             if not isinstance(check, dict):
-                raise ValueError("Field check must be an object")
+                raise ValueError('Field check must be an object')
 
             safe_name = escape(str(check_name), quote=True)
-            displayed_keys = {"Actual", "Expected", "Matched", "Reason"}
+            displayed_keys = {'Actual', 'Expected', 'Matched', 'Reason'}
             extra = {key: value for key, value in check.items() if key not in displayed_keys}
-
-            extra_html = (
-                "<details>"
-                "<summary>Details</summary>"
-                f"{render_value(extra)}"
-                "</details>"
-                if extra
-                else ""
-            )
-
+            extra_html = f'<details><summary>Details</summary>{render_value(extra)}</details>' if extra else ''
             rows.append(
-                "<tr>"
-                f'<th scope="row">{safe_name}</th>'
-                f"<td>{render_value(check.get('Actual'))}</td>"
-                f"<td>{render_value(check.get('Expected'))}</td>"
-                f"<td>{decision(check.get('Matched'))}</td>"
-                "<td>"
-                f"{render_value(check.get('Reason'))}"
-                f"{extra_html}"
-                "</td>"
-                "</tr>"
+                f"""<tr><th scope="row">{safe_name}</th><td>{render_value(check.get('Actual'))}</td><td>{render_value(check.get('Expected'))}</td><td>{decision(check.get('Matched'))}</td><td>{render_value(check.get('Reason'))}{extra_html}</td></tr>""",
             )
 
         safe_block = escape(str(block_name), quote=True)
 
         if rows:
-            block_html = (
-            '<div class="checks-scroll">'
-            '<table class="fields checks-table">'
-            f"<caption>Block: {safe_block}</caption>"
-            "<thead><tr>"
-            '<th scope="col">Field check</th>'
-            '<th scope="col">Actual</th>'
-            '<th scope="col">Expected</th>'
-            '<th scope="col">Result</th>'
-            '<th scope="col">Reason</th>'
-            "</tr></thead>"
-            "<tbody>"
-            + "".join(rows)
-            + "</tbody></table></div>"
-        )
+            block_html = f'<div class="checks-scroll"><table class="fields checks-table"><caption>Block: {safe_block}</caption><thead><tr><th scope="col">Field check</th><th scope="col">Actual</th><th scope="col">Expected</th><th scope="col">Result</th><th scope="col">Reason</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
         else:
-            block_html = (
-                f"<p>Block: {safe_block}. "
-                "No field checks were recorded.</p>"
-            )
+            block_html = f'<p>Block: {safe_block}. No field checks were recorded.</p>'
 
         blocks.append(block_html)
 
-    return "\n".join(blocks)
+    return '\n'.join(blocks)
 
 def render_event_evaluation(explanations):
     blocks = []
 
     for explanation in explanations:
-        evaluation = explanation.get("Evaluation")
-
-        metadata = {
-            key: value for key, value in explanation.items() if key != "Evaluation"
-        }
+        evaluation = explanation.get('Evaluation')
+        metadata = {key: value for key, value in explanation.items() if key != 'Evaluation'}
 
         if isinstance(evaluation, dict):
-            context = {
-                key: value for key, value in evaluation.items() if key != "Checks"
-            }
-
-            evaluation_html = (
-                f"{render_explanation(evaluation)}"
-                '<details class="recorded-evaluation"><summary>Recorded evaluation details</summary>'
-                f"{evaluation_trace(evaluation)}"
-                f"{render_value(context, semantic=True)}"
-                "<h5>Field checks</h5>"
-                f"{render_field_checks(evaluation.get('Checks'))}"
-                "</details>"
-            )
-
+            context = {key: value for key, value in evaluation.items() if key != 'Checks'}
+            evaluation_html = f"""{render_explanation(evaluation)}<details class="recorded-evaluation"><summary>Recorded evaluation details</summary>{evaluation_trace(evaluation)}{render_value(context, semantic=True)}<h5>Field checks</h5>{render_field_checks(evaluation.get('Checks'))}</details>"""
         else:
             evaluation_html = render_value(evaluation)
 
         blocks.append(
-            '<div class="evaluation-group">'
-            f"{render_value(metadata)}"
-            f"{evaluation_html}"
-            "</div>"
+            f'<div class="evaluation-group">{render_value(metadata)}{evaluation_html}</div>',
         )
 
     if not blocks:
-        return "<p>No rule evaluation is recorded for this event.</p>"
+        return '<p>No rule evaluation is recorded for this event.</p>'
 
-    return "\n".join(blocks)
+    return '\n'.join(blocks)
 
 def render_event_fields(fields):
-    scalar_fields = {key: value for key, value in fields.items() 
-                     if not isinstance(value, (dict, list))}
-
+    scalar_fields = {key: value for key, value in fields.items() if not isinstance(value, (dict, list))}
     blocks = []
 
     if scalar_fields:
@@ -866,21 +427,17 @@ def render_event_fields(fields):
             continue
 
         safe_key = escape(str(key), quote=True)
-
         blocks.append(
-            '<details class="event-details">'
-            f"<summary>{safe_key}</summary>"
-            f"{render_value(value)}"
-            "</details>"
+            f'<details class="event-details"><summary>{safe_key}</summary>{render_value(value)}</details>',
         )
 
     if not blocks:
-        return "<p>No event fields are available.</p>"
+        return '<p>No event fields are available.</p>'
 
-    return "\n".join(blocks)
+    return '\n'.join(blocks)
 
 def render_event_search():
-    return """
+    return '''
 <div id="event-search-panel" hidden>
     <h3>Search events</h3>
     <p>Filters apply to detailed event cards only.
@@ -994,54 +551,76 @@ document.addEventListener("DOMContentLoaded", () => {
     revealLinkedCard();
 });
 </script>
-"""
-
-
+'''
 
 def render_telemetry_review(evaluation, evidence):
-    # Старі звіти залишаються доступними без вигаданих перевірок.
-    telemetry = evaluation.get("telemetry")
+    telemetry = evaluation.get('telemetry')
+
     if telemetry is None:
-        return "<p>Telemetry sufficiency has not been assessed.</p>"
-    blocks = ["<h3>Telemetry requirements</h3>", render_value({
-        key: value for key, value in telemetry.items() if key != "requirements"
-    })]
-    for requirement in telemetry.get("requirements", []):
+        return '<p>Telemetry sufficiency has not been assessed.</p>'
+
+    blocks = [
+        '<h3>Telemetry requirements</h3>',
+        render_value({key: value for key, value in telemetry.items() if key != 'requirements'}),
+    ]
+
+    for requirement in telemetry.get('requirements', []):
         blocks.append('<details class="event-details">')
-        blocks.append("<summary>" + escape(str(requirement["id"]), quote=True)
-                      + " — " + badge(requirement["status"]) + "</summary>")
-        blocks.append(render_value({key: value for key, value in requirement.items()
-                                   if key not in {"matched_record_ids", "field_issues", "rejected_events"}}))
-        blocks.append("<h4>Matching evidence</h4>")
-        for record_id in requirement.get("matched_record_ids", []):
-            blocks.append(render_event_reference({"Log Record ID": record_id}, evidence))
-        if not requirement.get("matched_record_ids"):
-            blocks.append("<p>No selected events matched this requirement.</p>")
-        # Старі звіти без rejected_events залишаються сумісними.
-        # Відхилення селектором не означає відсутність події у сесії.
-        if requirement.get("rejected_events"):
-            blocks.append("<h4>Events excluded by selector</h4>")
-            blocks.append("<p>These selected events did not satisfy the selector. "
-                          "Required-field checks were not run on them.</p>")
-            for rejection in requirement["rejected_events"]:
+        blocks.append(
+            '<summary>' + escape(str(requirement['id']), quote=True) + ' — ' + badge(requirement['status']) + '</summary>',
+        )
+        blocks.append(
+            render_value(
+                {key: value for key, value in requirement.items() if key not in {'matched_record_ids', 'field_issues', 'rejected_events'}},
+            ),
+        )
+        blocks.append('<h4>Matching evidence</h4>')
+
+        for record_id in requirement.get('matched_record_ids', []):
+            blocks.append(render_event_reference({'Log Record ID': record_id}, evidence))
+
+        if not requirement.get('matched_record_ids'):
+            blocks.append('<p>No selected events matched this requirement.</p>')
+
+        if requirement.get('rejected_events'):
+            blocks.append('<h4>Events excluded by selector</h4>')
+            blocks.append(
+                '<p>These selected events did not satisfy the selector. Required-field checks were not run on them.</p>',
+            )
+
+            for rejection in requirement['rejected_events']:
                 blocks.append('<details class="event-details">')
-                blocks.append("<summary>Event " + escape(str(rejection["record_id"]), quote=True)
-                              + "</summary>")
-                blocks.append(render_event_reference({"Log Record ID": rejection["record_id"]}, evidence))
-                for check in rejection["checks"]:
-                    # Використовуємо render_value: текст доказів не виконується як HTML.
-                    blocks.append(render_value({
-                        "Field path": check["path"],
-                        "Field present": check["field_present"],
-                        "Expected": check["expected"], "Expected type": check["expected_type"],
-                        "Actual": check["actual"], "Actual type": check["actual_type"],
-                        "Reason": check["reason"],
-                    }))
-                blocks.append("</details>")
-        if requirement.get("field_issues"):
-            blocks.append("<h4>Field issues</h4>")
-            for issue in requirement["field_issues"]:
-                blocks.append(render_value({"Field path": issue["path"], "Reason": issue["reason"]}))
-                blocks.append(render_event_reference({"Log Record ID": issue["record_id"]}, evidence))
-        blocks.append("</details>")
-    return "".join(blocks)
+                blocks.append(
+                    '<summary>Event ' + escape(str(rejection['record_id']), quote=True) + '</summary>',
+                )
+                blocks.append(
+                    render_event_reference({'Log Record ID': rejection['record_id']}, evidence),
+                )
+
+                for check in rejection['checks']:
+                    blocks.append(
+                        render_value(
+                            {
+                                'Field path': check['path'],
+                                'Field present': check['field_present'],
+                                'Expected': check['expected'],
+                                'Expected type': check['expected_type'],
+                                'Actual': check['actual'],
+                                'Actual type': check['actual_type'],
+                                'Reason': check['reason'],
+                            },
+                        ),
+                    )
+
+                blocks.append('</details>')
+
+        if requirement.get('field_issues'):
+            blocks.append('<h4>Field issues</h4>')
+
+            for issue in requirement['field_issues']:
+                blocks.append(render_value({'Field path': issue['path'], 'Reason': issue['reason']}))
+                blocks.append(render_event_reference({'Log Record ID': issue['record_id']}, evidence))
+
+        blocks.append('</details>')
+
+    return ''.join(blocks)

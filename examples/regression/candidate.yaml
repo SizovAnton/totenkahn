@@ -3,7 +3,7 @@
   "id": "synthetic-candidate",
   "logsource": {
     "product": "windows",
-    "service": "dvp-demo"
+    "service": "totenkahn-demo"
   },
   "detection": {
     "selection": {

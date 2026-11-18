@@ -4,14 +4,14 @@
     "event_id": "demo",
     "computer": "synthetic-host",
     "system_time": "2026-11-10T00:00:00Z",
-    "channel": "DVP-Demo/Operational",
-    "provider": "DVP-Demo",
+    "channel": "TOTENKAHN-Demo/Operational",
+    "provider": "TOTENKAHN-Demo",
     "source": {
-      "channel": "DVP-Demo/Operational",
-      "provider": "DVP-Demo",
+      "channel": "TOTENKAHN-Demo/Operational",
+      "provider": "TOTENKAHN-Demo",
       "description": "Synthetic regression example",
       "product": "windows",
-      "service": "dvp-demo",
+      "service": "totenkahn-demo",
       "category": null
     },
     "data_fields": {
@@ -24,14 +24,14 @@
     "event_id": "demo",
     "computer": "synthetic-host",
     "system_time": "2026-11-10T00:00:00Z",
-    "channel": "DVP-Demo/Operational",
-    "provider": "DVP-Demo",
+    "channel": "TOTENKAHN-Demo/Operational",
+    "provider": "TOTENKAHN-Demo",
     "source": {
-      "channel": "DVP-Demo/Operational",
-      "provider": "DVP-Demo",
+      "channel": "TOTENKAHN-Demo/Operational",
+      "provider": "TOTENKAHN-Demo",
       "description": "Synthetic regression example",
       "product": "windows",
-      "service": "dvp-demo",
+      "service": "totenkahn-demo",
       "category": null
     },
     "data_fields": {
@@ -44,14 +44,14 @@
     "event_id": "demo",
     "computer": "synthetic-host",
     "system_time": "2026-11-10T00:00:00Z",
-    "channel": "DVP-Demo/Operational",
-    "provider": "DVP-Demo",
+    "channel": "TOTENKAHN-Demo/Operational",
+    "provider": "TOTENKAHN-Demo",
     "source": {
-      "channel": "DVP-Demo/Operational",
-      "provider": "DVP-Demo",
+      "channel": "TOTENKAHN-Demo/Operational",
+      "provider": "TOTENKAHN-Demo",
       "description": "Synthetic regression example",
       "product": "windows",
-      "service": "dvp-demo",
+      "service": "totenkahn-demo",
       "category": null
     },
     "data_fields": {

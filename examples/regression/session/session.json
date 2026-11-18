@@ -17,11 +17,11 @@
     },
     "sources": [
       {
-        "channel": "DVP-Demo/Operational",
-        "provider": "DVP-Demo",
+        "channel": "TOTENKAHN-Demo/Operational",
+        "provider": "TOTENKAHN-Demo",
         "description": "Synthetic regression example",
         "product": "windows",
-        "service": "dvp-demo"
+        "service": "totenkahn-demo"
       }
     ]
   },

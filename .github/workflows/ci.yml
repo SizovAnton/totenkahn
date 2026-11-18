@@ -1,0 +1,55 @@
+name: TOTENKAHN source and detection CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install pinned development dependencies
+        run: |
+          python -m pip install PyYAML==6.0.3 rich==15.0.0 -r requirements-quality.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          exit $LASTEXITCODE
+      - name: Static quality
+        run: |
+          python -B scripts/check_quality.py --output-dir ci-results/quality
+          exit $LASTEXITCODE
+      - name: Inert source tests
+        run: |
+          if ($IsWindows) { Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force }
+          python -u -B scripts/check_setup_stage.py --source-only --output-dir ci-results/source
+          exit $LASTEXITCODE
+      - name: Saved evidence gate
+        run: |
+          python -B main.py ci --config examples/ci/pipeline.json --output-dir ci-results/detection
+          exit $LASTEXITCODE
+      - name: Preserve diagnostics even after failures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-results/
+          if-no-files-found: warn
+          retention-days: 14

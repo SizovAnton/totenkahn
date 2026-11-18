@@ -1,0 +1,14 @@
+{
+  "title": "Synthetic candidate rule",
+  "id": "synthetic-candidate",
+  "logsource": {
+    "product": "windows",
+    "service": "totenkahn-demo"
+  },
+  "detection": {
+    "selection": {
+      "marker": "new"
+    },
+    "condition": "selection"
+  }
+}

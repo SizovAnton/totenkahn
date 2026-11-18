@@ -3,7 +3,7 @@
   "id": "synthetic-baseline",
   "logsource": {
     "product": "windows",
-    "service": "dvp-demo"
+    "service": "totenkahn-demo"
   },
   "detection": {
     "selection": {
