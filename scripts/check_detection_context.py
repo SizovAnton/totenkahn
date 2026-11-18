@@ -68,7 +68,8 @@ class ContextTests(unittest.TestCase):
    def handle_starttag(self,tag,attrs):
     a=dict(attrs)
     if 'id' in a:self.ids.append(a['id'])
-    if tag=='a':self.links.append(a['href'][1:])
+    href=a.get('href')
+    if tag=='a' and href is not None:self.links.append(href[1:])
   parsed=Links();parsed.feed(h)
   self.assertEqual(len(parsed.ids),len(set(parsed.ids)))
   self.assertTrue(set(parsed.links)<=set(parsed.ids)|{'event-parent','event-child'})

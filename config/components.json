@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "id": "windows_powershell",
+      "modes": ["manual", "auto"],
+      "check_id": "powershell",
+      "delivery": "system"
+    },
+    {
+      "id": "event_collector",
+      "modes": ["manual", "auto"],
+      "check_id": "collector.script",
+      "delivery": "release"
+    },
+    {
+      "id": "atomic_runner",
+      "modes": ["auto"],
+      "check_id": "atomic.runner_script",
+      "delivery": "release"
+    },
+        {
+      "id": "powershell_yaml",
+      "modes": ["auto"],
+      "check_id": "atomic.yaml_module",
+      "delivery": "external"
+    },
+    {
+      "id": "invoke_atomic_red_team",
+      "modes": ["auto"],
+      "check_id": "atomic.module_path",
+      "delivery": "external"
+    },
+    {
+      "id": "atomic_definitions",
+      "modes": ["auto"],
+      "check_id": "atomic.atomics_path",
+      "delivery": "external"
+    }
+  ]
+}

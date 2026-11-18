@@ -1,5 +1,6 @@
 """Представлення результатів перевірки у таблицях Rich."""
 
+from reporting.explanation import explain_evaluation, terminal_explanation
 from rich.console import Group
 from rich.table import Table
 from rich.text import Text
@@ -7,12 +8,14 @@ from rich.text import Text
 from displaying.table import add_checks_rows, format_check_details
 
 def explain_field_check(check):
-    if check["Matched"] is True:
+    if check.get("Matched") is True:
         status = "MATCH"
-    elif check["Field Present"] is False:
+    elif check.get("Field Present") is False:
         status = "FIELD MISSING"
-    else:
+    elif check.get("Matched") is False:
         status = "NO MATCH"
+    else:
+        status = "NOT RECORDED"
 
     return {
         **check,
@@ -38,6 +41,7 @@ def find_check_pattern(patterns, pattern_reference):
 
 def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern_reference=None):
     sections = []
+    explanations = []
     visible_group_reference = set()
     all_patterns = rule["Check Summary"]
 
@@ -50,8 +54,6 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
         visible_patterns = all_patterns[:pattern_limit]
 
     show_all_groups = full_detail or pattern_reference is not None
-
-
 
     summary_table = Table(title="Evidence Group", show_lines=True)
     summary_table.add_column("Group")
@@ -124,10 +126,14 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
 
             group_label = group["Group Reference"].rsplit("-", 1)[-1]
             evidence = group["Evidence"]
-            raw_checks = evidence["Checks"]
+            raw_checks = evidence.get("Checks") or {}
             time_details = format_check_details(group["Time Summary"])
 
-            summary_table.add_row(Text(group_label), Text(category), Text(str(group["Count"])), Text(time_details), Text(str(evidence["Selection Reason"])))
+            summary_table.add_row(Text(group_label), Text(category), Text(str(group["Count"])), Text(time_details), Text(explain_evaluation(evidence)["summary"]))
+
+            references = ", ".join(str(r.get("Log Record ID", "unknown")) for r in group.get("References", [])[:5])
+            more = " (more event references in HTML)" if len(group.get("References", [])) > 5 else ""
+            explanations.append(terminal_explanation(evidence, f"Group {group_label} — events: {references}{more}"))
 
             if raw_checks:
 
@@ -135,7 +141,7 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
                 add_checks_rows(table, checks, group_label)
 
             else:
-                source_checks = evidence["Logsource"]["Checks"]
+                source_checks = (evidence.get("Logsource") or {}).get("Checks") or {}
 
                 if source_checks:
                     add_checks_rows(table, {
@@ -160,6 +166,7 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
     sections.append(summary_table)
     sections.append(Text(""))
     sections.append(table)
+    sections.extend(explanations)
 
     return Group(*sections)
 

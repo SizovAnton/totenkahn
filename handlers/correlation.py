@@ -1,5 +1,3 @@
-"""Зіставлення запусків Atomic Red Team із подіями."""
-
 from logging import root
 from tabnanny import check
 

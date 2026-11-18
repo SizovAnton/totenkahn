@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "component_id": "powershell_yaml",
+      "version": "0.4.12",
+      "url": "https://www.powershellgallery.com/api/v2/package/powershell-yaml/0.4.12",
+      "size": 327106,
+      "sha256": "d4602bc7a4a093766520422d53ca8b09acde162286fae11e2ee6c8edfea07810"
+    },
+    {
+      "component_id": "invoke_atomic_red_team",
+      "version": "2.3.0",
+      "url": "https://www.powershellgallery.com/api/v2/package/Invoke-AtomicRedTeam/2.3.0",
+      "size": 68571,
+      "sha256": "280fb166ed7c261e80dea30f51e9cdd4f265b4f291b3fab700ea08664f4af5f1"
+    },
+    {
+      "component_id": "atomic_definitions",
+      "version": "a0e3f9bc69fed2fd711bd1f1aa87a40c33482fe6",
+      "url": "https://codeload.github.com/redcanaryco/atomic-red-team/zip/a0e3f9bc69fed2fd711bd1f1aa87a40c33482fe6",
+      "size": 168785539,
+      "sha256": "2392fb6dd4e6acea3e9087fc6ffde0f7c20a32e873ad191366afc8599fcc9ea2"
+    }
+  ]
+}

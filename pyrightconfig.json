@@ -1,0 +1,6 @@
+{
+  "include": ["main.py", "dvp_setup.py", "validation.py", "prepare_acceptance_release.py", "handlers", "reporting", "displaying", "rule_condition", "scripts"],
+  "exclude": ["**/__pycache__", ".venv", ".venv-win", "build", "reports", "runs"],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "standard"
+}

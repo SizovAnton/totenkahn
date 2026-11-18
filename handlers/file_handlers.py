@@ -60,8 +60,6 @@ def load_session_metadata(session_dir: Path):
     if type(normalizer_version) is not int or normalizer_version !=1:
         raise ValueError(f"Unsupported normalizer_version: {normalizer_version!r}")
 
-    
-
     profiles_snapshot = metadata.get("profiles_snapshot")
 
     if not isinstance(profiles_snapshot, dict):
@@ -102,6 +100,7 @@ def load_session_metadata(session_dir: Path):
             
     for profile in [windows_defaults, *sources]:
         validate_context_profile(profile)
+    
     return metadata
 
 def load_manual_test_context(path:Path):
@@ -205,7 +204,10 @@ def load_configuration(default_path, override_path):
     if not isinstance(default, dict):
         raise ValueError(f"Configuration must be a JSON object: {default_path}")
 
-    override = load_sources_confsg(override_path)
+    try:
+        override = load_sources_confsg(override_path)
+    except FileNotFoundError:
+        override = {}
     
     if not isinstance(override, dict):
         raise ValueError(f"Configuration must be a JSON object: {override_path}")
@@ -222,7 +224,7 @@ def load_test_case(path: Path):
     return validate_test_case(test_case)
 
 def validate_test_case(test_case):
-    # Спільна перевірка для JSON-завантаження та прямого виклику оцінювача.
+
     def require_fields(value, expected, label):
         if not isinstance(value, dict):
             raise ValueError(f"{label} must be an object")
@@ -322,12 +324,12 @@ def validate_test_case(test_case):
             raise ValueError("Telemetry requirements must be a non-empty list")
 
         def validate_path(path):
-            # Шлях — список точних ключів словника, не Python-вираз або XPath.
             if (not isinstance(path, list) or not path
                     or any(not isinstance(key, str) or not key.strip() for key in path)):
                 raise ValueError("Field path must be a non-empty list of non-empty strings")
 
         requirement_ids = set()
+        
         for requirement in requirements:
             require_fields(requirement, {"id", "selector", "min_count", "required_fields"},
                            "Telemetry requirement")
@@ -344,6 +346,7 @@ def validate_test_case(test_case):
             if not isinstance(selector, list):
                 raise ValueError("Telemetry selector must be a list")
             paths = set()
+            
             for predicate in selector:
                 require_fields(predicate, {"path", "equals"}, "Telemetry selector predicate")
                 validate_path(predicate["path"])
@@ -370,63 +373,83 @@ def validate_test_case(test_case):
 
 
 def load_regression_suite(path: Path):
-    # Відносні шляхи належать файлу набору, а не поточному каталогу термінала.
     path = path.resolve()
+    
     with path.open(encoding="utf-8") as file:
         suite = json.load(file)
+    
     if not isinstance(suite, dict) or set(suite) != {"schema_version", "suite_id", "description", "cases"}:
         raise ValueError("Regression suite must contain schema_version, suite_id, description and cases")
+    
     if type(suite["schema_version"]) is not int or suite["schema_version"] != 1:
         raise ValueError("Unsupported regression suite schema_version")
+    
     for key in ("suite_id", "description"):
         if not isinstance(suite[key], str) or not suite[key].strip():
             raise ValueError(f"Suite {key} must be a non-empty string")
+    
     if not isinstance(suite["cases"], list) or not suite["cases"]:
         raise ValueError("Regression suite cases must be a non-empty list")
+    
     entries = []
     seen = set()
+    
     for entry in suite["cases"]:
         if not isinstance(entry, dict) or set(entry) != {"test_case", "session"}:
             raise ValueError("Suite entries must contain test_case and session only")
+        
         for key in ("test_case", "session"):
             if not isinstance(entry[key], str) or not entry[key].strip():
                 raise ValueError(f"Suite entry {key} must be a non-empty path")
+        
         case_path = (path.parent / entry["test_case"]).resolve()
         session_dir = (path.parent / entry["session"]).resolve()
         identity = (case_path, session_dir)
+        
         if identity in seen:
             raise ValueError("Duplicate regression suite entry")
+        
         seen.add(identity)
         entries.append({"case_path": case_path, "session_dir": session_dir})
+    
     return suite, entries
 
-
 def load_regression_session(session_dir: Path):
-    # Повторно використовуємо перевірку паспорта: тільки завершена сесія
-    # та підтримувана версія нормалізатора. Legacy не переінтерпретуємо.
+
     from handlers.events import config_handler
 
     metadata = load_session_metadata(session_dir)
+    
     if metadata is None:
         raise ValueError("Regression requires a saved session passport")
+    
     with (session_dir / "events.json").open(encoding="utf-8") as file:
         events = json.load(file)
     if not isinstance(events, list):
         raise ValueError("Session events must be a list")
+    
     seen = set()
+    
     for event in events:
         if not isinstance(event, dict):
             raise ValueError("Session event must be an object")
+        
         for key in ("record_id", "channel", "provider", "event_id", "computer", "system_time"):
             if not isinstance(event.get(key), str) or not event[key].strip():
                 raise ValueError(f"Session event {key} must be a non-empty string")
+        
         if event["record_id"] in seen:
             raise ValueError(f"Duplicate event record_id: {event['record_id']}")
+        
         seen.add(event["record_id"])
+        
         if not isinstance(event.get("data_fields"), dict):
             raise ValueError("Session event data_fields must be an object")
+        
         expected_source = config_handler(event["channel"], event["provider"],
                                          metadata["profiles_snapshot"], event["event_id"])
+        
         if event.get("source") != expected_source:
             raise ValueError("Saved event source does not match session profiles_snapshot")
+    
     return metadata, events

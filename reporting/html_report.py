@@ -1,3 +1,5 @@
+from reporting.atomic_view import render_lifecycle
+from reporting.explanation import explain_evaluation, render_explanation
 from html import escape
 from pathlib import Path
 import json
@@ -66,6 +68,7 @@ def build_html_report(report):
                 "Report ID": report.get("Report ID"),
                 "Session": report.get("Session"),
                 "Analysis": report.get("Analysis"),
+                "Telemetry Readiness": report.get("Telemetry Readiness"),
             },
         ),
         (
@@ -142,6 +145,9 @@ def build_html_report(report):
                                           report.get("Event Evidence"))
                 + section_body
             )
+
+        if section_id == "passport" and report.get("Atomic Lifecycle"):
+            section_body += render_lifecycle(report["Atomic Lifecycle"])
 
         if section_id == "evaluation":
             section_body = metrics(report.get("Events Summary")) + legend() + section_body
@@ -485,12 +491,11 @@ def render_event_cards(evidence, event_explanations, selected_evidence_ids=None)
             f"<h3>Event {safe_record_id}</h3>"
             f"{evidence_label}"
             f"{source_view(event)}"
-            f"{render_event_summary(explanations)}"
 
-            '<details class="event-details">'
-            "<summary>Rule evaluation</summary>"
+            '<section class="event-evaluation">'
+            "<h4>Rule evaluation</h4>"
             f"{evaluation_html}"
-            "</details>"
+            "</section>"
 
             '<details class="event-details">'
             "<summary>Event fields</summary>"
@@ -710,7 +715,7 @@ def render_event_summary(explanations):
         evaluation = explanation.get("Evaluation")
 
         reason = (
-            evaluation.get("Selection Reason")
+            explain_evaluation(evaluation)["summary"]
             if isinstance(evaluation, dict) else None
         )
 
@@ -823,10 +828,13 @@ def render_event_evaluation(explanations):
             }
 
             evaluation_html = (
+                f"{render_explanation(evaluation)}"
+                '<details class="recorded-evaluation"><summary>Recorded evaluation details</summary>'
                 f"{evaluation_trace(evaluation)}"
                 f"{render_value(context, semantic=True)}"
                 "<h5>Field checks</h5>"
                 f"{render_field_checks(evaluation.get('Checks'))}"
+                "</details>"
             )
 
         else:

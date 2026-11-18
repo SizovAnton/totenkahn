@@ -1,4 +1,6 @@
 param(
+    [string]$YamlModulePath,
+
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$ModulePath,
@@ -27,6 +29,12 @@ try {
         throw "Atomic tests directory not found: $AtomicPath"
     }
 
+    if ($YamlModulePath) {
+        if (-not (Test-Path -LiteralPath $YamlModulePath -PathType Leaf)) {
+            throw "YAML module file not found: $YamlModulePath"
+        }
+        Import-Module -Name $YamlModulePath -ErrorAction Stop
+    }
     Import-Module -Name $ModulePath -ErrorAction Stop
     $null = Get-Command -Name "Invoke-AtomicTest" -ErrorAction Stop
 

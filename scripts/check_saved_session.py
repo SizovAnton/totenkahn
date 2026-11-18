@@ -5,11 +5,9 @@ import argparse
 from handlers.file_handlers import load_sigma_rule
 
 def main():
-    # Спочатку описуємо аргументи командного рядка.
     parser = argparse.ArgumentParser()
     parser.add_argument("--rule", required=True, type=Path)
 
-    # Читаємо аргументи після їх оголошення.
     args = parser.parse_args()
 
     script_path = Path(__file__).resolve()
@@ -19,17 +17,10 @@ def main():
     with events_path.open("r", encoding="utf-8") as file:
         events = json.load(file)
 
-    # args уже існує й містить переданий шлях до правила.
     rule_path = args.rule
     rule = load_sigma_rule(rule_path)
 
-    # Перевіряємо завантажені дані.
     print("Event count:", len(events))
-    #print("Rule:", rule["title"])
-
-
-
-
 
 
 if __name__ == "__main__":

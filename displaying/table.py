@@ -97,6 +97,7 @@ def format_detail_value(value, indent=0):
 
             else:
                 rows.append(f"{prefix}{key}: {nested_value!r}")
+                
     elif isinstance(value, list):
         if not value:
             return [prefix + repr(value)]

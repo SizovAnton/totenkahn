@@ -231,10 +231,10 @@ def build_regression_html(report):
                              "Changed evaluation fields") + '</details>')
             for label in indexes:
                 result = indexes[label][record_id]
-                cards.append('<details class="event-details"><summary>' + label.title()
-                             + ' rule evaluation</summary>'
+                cards.append('<section class="event-evaluation"><h4>' + label.title()
+                             + ' rule evaluation</h4>'
                              + render_event_evaluation([{"Result": decision_label(result["Selection"]),
-                                                         "Evaluation": result}]) + '</details>')
+                                                         "Evaluation": result}]) + '</section>')
             cards.append('<details class="event-details"><summary>Event fields</summary>'
                          + render_event_fields({k: v for k, v in event.items() if k != "raw_xml"})
                          + '</details><details><summary>Raw XML</summary>'

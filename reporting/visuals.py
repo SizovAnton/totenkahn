@@ -3,6 +3,15 @@ from html import escape
 import json
 
 VISUAL_STYLES = """
+.decision-explanation {border:1px solid #cdd7e4;border-radius:8px;padding:14px;margin:12px 0;background:#f8fafc;overflow-wrap:anywhere}
+.decision-summary {line-height:1.65;margin-top:0}
+.decision-tree,.decision-tree ul {list-style:none;padding-left:18px}
+.decision-tree {padding-left:0}
+.decision-tree li {margin:8px 0}
+.decision-tree ul {border-left:2px solid #94a3b8;margin-left:8px}
+.decision-tree li>span {display:inline-block;background:white;border:1px solid #dbe3ec;border-radius:5px;padding:7px 10px;max-width:100%;box-sizing:border-box}
+.decision-chain>summary,.recorded-evaluation>summary {cursor:pointer;font-weight:600}
+@media(max-width:650px) {.decision-tree ul {padding-left:9px;margin-left:3px}.decision-explanation {padding:9px}}
 :root {--muted:#566477;--line:#cdd7e4}
 h2 {color:#173b63;border-bottom:2px solid #dbe7f4;padding-bottom:10px}
 h3,h4,h5,caption {color:#214e78} caption {font-weight:700;text-align:left;padding:10px 0}
