@@ -168,8 +168,7 @@ class CITests(unittest.TestCase):
             show_startup_banner([], stream)
 
         self.assertIn("T O T E N K A H N", stream.getvalue())
-        self.assertIn("Evidence", stream.getvalue())
-        self.assertIn("Hunting", stream.getvalue())
+        self.assertRegex(stream.getvalue(), r"v\d+\.\d+\.\d+")
         self.assertLessEqual(len(stream.getvalue().splitlines()), 6)
 
         for arguments in (["ci"], ["doctor", "--json"], ["--atomic-plan"]):
