@@ -11,7 +11,7 @@ from handlers.component_inventory import reject_duplicate_keys, reject_json_cons
 from handlers.package_cache import load_dependency_lock, obtain_package
 from handlers.package_extract import prepare_zip_package
 
-MODULE_PROBE = '''
+MODULE_PROBE = """
 $ErrorActionPreference = \'Stop\'
 $ProgressPreference = \'SilentlyContinue\'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -186,37 +186,41 @@ catch {
     exit $exitCode
 }
 
-'''
+"""
+
 
 def find_single_file(root: Path, name: str) -> Path:
     matches = [path for path in root.rglob(name) if path.is_file()]
 
     if len(matches) != 1:
-        raise ValueError(f'Expected exactly one {name}; found {len(matches)}')
+        raise ValueError(f"Expected exactly one {name}; found {len(matches)}")
 
     return matches[0].resolve()
 
-def check_atomic_bundle(lock_path: Path, cache_dir: Path, *, offline: bool=False, timeout_seconds: int=180) -> dict:
-    if sys.platform != 'win32':
-        raise ValueError('Atomic module compatibility check requires Windows')
+
+def check_atomic_bundle(
+    lock_path: Path, cache_dir: Path, *, offline: bool = False, timeout_seconds: int = 180
+) -> dict:
+    if sys.platform != "win32":
+        raise ValueError("Atomic module compatibility check requires Windows")
 
     if type(timeout_seconds) is not int or timeout_seconds <= 0:
-        raise ValueError('timeout_seconds must be a positive integer')
+        raise ValueError("timeout_seconds must be a positive integer")
 
-    powershell = shutil.which('powershell.exe')
+    powershell = shutil.which("powershell.exe")
 
     if powershell is None:
-        raise ValueError('powershell.exe was not found')
+        raise ValueError("powershell.exe was not found")
 
     lock = load_dependency_lock(lock_path)
-    packages = {package['component_id']: package for package in lock['packages']}
-    required_ids = {'powershell_yaml', 'invoke_atomic_red_team'}
+    packages = {package["component_id"]: package for package in lock["packages"]}
+    required_ids = {"powershell_yaml", "invoke_atomic_red_team"}
     missing = required_ids - set(packages)
 
     if missing:
-        raise ValueError(f'Missing locked Atomic packages: {sorted(missing)}')
+        raise ValueError(f"Missing locked Atomic packages: {sorted(missing)}")
 
-    with tempfile.TemporaryDirectory(prefix='totenkahn-bundle-check-') as directory:
+    with tempfile.TemporaryDirectory(prefix="totenkahn-bundle-check-") as directory:
         work = Path(directory)
 
         with ExitStack() as stack:
@@ -224,20 +228,22 @@ def check_atomic_bundle(lock_path: Path, cache_dir: Path, *, offline: bool=False
 
             for component_id in sorted(required_ids):
                 package = packages[component_id]
-                print(f'Preparing package: {component_id}', file=sys.stderr, flush=True)
+                print(f"Preparing package: {component_id}", file=sys.stderr, flush=True)
                 obtained = obtain_package(package, cache_dir, offline=offline)
-                print(f'Extracting package: {component_id}', file=sys.stderr, flush=True)
+                print(f"Extracting package: {component_id}", file=sys.stderr, flush=True)
                 prepared = stack.enter_context(
-                    prepare_zip_package(Path(obtained['path']), package, staging_parent=work),
+                    prepare_zip_package(Path(obtained["path"]), package, staging_parent=work),
                 )
-                roots[component_id] = Path(prepared['directory'])
+                roots[component_id] = Path(prepared["directory"])
 
-            yaml_manifest = find_single_file(roots['powershell_yaml'], 'powershell-yaml.psd1')
-            art_manifest = find_single_file(roots['invoke_atomic_red_team'], 'Invoke-AtomicRedTeam.psd1')
-            private_config = art_manifest.parent.parent / 'privateConfig.ps1'
+            yaml_manifest = find_single_file(roots["powershell_yaml"], "powershell-yaml.psd1")
+            art_manifest = find_single_file(
+                roots["invoke_atomic_red_team"], "Invoke-AtomicRedTeam.psd1"
+            )
+            private_config = art_manifest.parent.parent / "privateConfig.ps1"
 
             if private_config.exists():
-                raise ValueError('Unexpected privateConfig.ps1 near staged ART')
+                raise ValueError("Unexpected privateConfig.ps1 near staged ART")
 
             return check_module_paths(
                 yaml_manifest,
@@ -246,43 +252,46 @@ def check_atomic_bundle(lock_path: Path, cache_dir: Path, *, offline: bool=False
                 timeout_seconds=timeout_seconds,
             )
 
-def check_module_paths(yaml_manifest: Path, art_manifest: Path, packages: dict, *, timeout_seconds: int=180) -> dict:
-    if sys.platform != 'win32':
-        raise ValueError('Module import verification requires Windows')
+
+def check_module_paths(
+    yaml_manifest: Path, art_manifest: Path, packages: dict, *, timeout_seconds: int = 180
+) -> dict:
+    if sys.platform != "win32":
+        raise ValueError("Module import verification requires Windows")
 
     if type(timeout_seconds) is not int or timeout_seconds <= 0:
-        raise ValueError('timeout_seconds must be a positive integer')
+        raise ValueError("timeout_seconds must be a positive integer")
 
-    powershell = shutil.which('powershell.exe')
+    powershell = shutil.which("powershell.exe")
 
     if powershell is None:
-        raise ValueError('powershell.exe was not found')
+        raise ValueError("powershell.exe was not found")
 
-    required_ids = {'powershell_yaml', 'invoke_atomic_red_team'}
+    required_ids = {"powershell_yaml", "invoke_atomic_red_team"}
 
     if not required_ids.issubset(packages):
-        raise ValueError('Both pinned modules are required')
+        raise ValueError("Both pinned modules are required")
 
     yaml_manifest = Path(yaml_manifest).resolve(strict=True)
     art_manifest = Path(art_manifest).resolve(strict=True)
 
-    if (art_manifest.parent.parent / 'privateConfig.ps1').exists():
-        raise ValueError('Unexpected privateConfig.ps1 near ART module')
+    if (art_manifest.parent.parent / "privateConfig.ps1").exists():
+        raise ValueError("Unexpected privateConfig.ps1 near ART module")
 
     request = {
-        'yaml_manifest': str(yaml_manifest),
-        'yaml_version': packages['powershell_yaml']['version'],
-        'art_manifest': str(art_manifest),
-        'art_version': packages['invoke_atomic_red_team']['version'],
+        "yaml_manifest": str(yaml_manifest),
+        "yaml_version": packages["powershell_yaml"]["version"],
+        "art_manifest": str(art_manifest),
+        "art_version": packages["invoke_atomic_red_team"]["version"],
     }
-    payload = base64.b64encode(json.dumps(request, ensure_ascii=False).encode('utf-8')).decode(
-        'ascii',
+    payload = base64.b64encode(json.dumps(request, ensure_ascii=False).encode("utf-8")).decode(
+        "ascii",
     )
     script = "$requestBase64 = '" + payload + "'\n" + MODULE_PROBE
-    encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
-    print('Checking PowerShell modules and synthetic YAML', file=sys.stderr, flush=True)
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    print("Checking PowerShell modules and synthetic YAML", file=sys.stderr, flush=True)
     completed = subprocess.run(
-        [powershell, '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+        [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout_seconds,
@@ -291,42 +300,47 @@ def check_module_paths(yaml_manifest: Path, art_manifest: Path, packages: dict, 
 
     try:
         result = json.loads(
-            completed.stdout.decode('utf-8-sig'),
+            completed.stdout.decode("utf-8-sig"),
             object_pairs_hook=reject_duplicate_keys,
             parse_constant=reject_json_constant,
         )
     except (ValueError, UnicodeError) as exc:
-        stderr = completed.stderr.decode('utf-8', errors='replace').strip()
-        raise ValueError(f'Invalid PowerShell probe response: {stderr}') from exc
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+
+        raise ValueError(f"Invalid PowerShell probe response: {stderr}") from exc
 
     if not isinstance(result, dict):
-        raise ValueError('PowerShell probe must return a JSON object')
+        raise ValueError("PowerShell probe must return a JSON object")
 
-    expected_codes = {'passed': 0, 'failed': 1, 'error': 2, 'blocked': 3}
-    status = result.get('status')
+    expected_codes = {"passed": 0, "failed": 1, "error": 2, "blocked": 3}
+    status = result.get("status")
 
     if not isinstance(status, str) or status not in expected_codes:
-        raise ValueError('Unknown PowerShell probe status')
+        raise ValueError("Unknown PowerShell probe status")
 
     if completed.returncode != expected_codes[status]:
-        raise ValueError('PowerShell status and exit code disagree')
+        raise ValueError("PowerShell status and exit code disagree")
 
-    result['packages'] = [{
-        'component_id': component_id,
-        'version': packages[component_id]['version'],
-        'sha256': packages[component_id]['sha256'],
-    } for component_id in sorted(required_ids)]
+    result["packages"] = [
+        {
+            "component_id": component_id,
+            "version": packages[component_id]["version"],
+            "sha256": packages[component_id]["sha256"],
+        }
+        for component_id in sorted(required_ids)
+    ]
 
     return result
 
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description='Check pinned Atomic modules without executing Atomic tests',
+        description="Check pinned Atomic modules without executing Atomic tests",
     )
-    parser.add_argument('--lock', type=Path, required=True)
-    parser.add_argument('--cache', type=Path, required=True)
-    parser.add_argument('--offline', action='store_true')
-    parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument("--lock", type=Path, required=True)
+    parser.add_argument("--cache", type=Path, required=True)
+    parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args(argv)
 
     try:
@@ -338,23 +352,24 @@ def main(argv=None) -> int:
         )
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         report = {
-            'status': 'error',
-            'scope': 'module_import_and_synthetic_parsing',
-            'reason': str(exc),
-            'category': 'bundle_check_error',
+            "status": "error",
+            "scope": "module_import_and_synthetic_parsing",
+            "reason": str(exc),
+            "category": "bundle_check_error",
         }
-        winerror = getattr(exc, 'winerror', None)
+        winerror = getattr(exc, "winerror", None)
 
         if winerror in {225, 226}:
-            report['status'] = 'blocked'
-            report['category'] = 'security_product_blocked'
-            report['winerror'] = winerror
+            report["status"] = "blocked"
+            report["category"] = "security_product_blocked"
+            report["winerror"] = winerror
         elif isinstance(exc, subprocess.TimeoutExpired):
-            report['category'] = 'probe_timeout'
+            report["category"] = "probe_timeout"
 
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
-    return {'passed': 0, 'failed': 1, 'error': 2, 'blocked': 3}[report['status']]
+    return {"passed": 0, "failed": 1, "error": 2, "blocked": 3}[report["status"]]
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     raise SystemExit(main())

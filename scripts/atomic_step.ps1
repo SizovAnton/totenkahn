@@ -1,4 +1,13 @@
-param([Parameter(Mandatory = $true)][string]$RequestPath)
+param(
+    [Parameter(Mandatory = $true)][string]$RequestPath,
+    [Parameter(Mandatory = $true)][string]$ResponsePath
+)
+function Write-StepResponse($Result) {
+    $json = $Result | ConvertTo-Json -Compress
+    $temporary = $ResponsePath + '.tmp'
+    [IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move($temporary, $ResponsePath)
+}
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $ErrorActionPreference = 'Stop'
 try {
@@ -17,7 +26,7 @@ try {
 
     }
     if ($request.elevation_required -and -not $elevated) {
-        [Console]::Out.WriteLine('{"status":"blocked","reason":"Selected test requires elevation","exit_code":null}')
+        Write-StepResponse @{status='blocked';reason='Selected test requires elevation';exit_code=$null}
         exit 1
 
     }
@@ -58,7 +67,7 @@ try {
         timed_out=[bool]$res.IsTimeout
         started_at=$startedAt
     }
-    [Console]::Out.WriteLine(($result | ConvertTo-Json -Compress))
+    Write-StepResponse $result
     if ($status -eq 'passed') {
         exit 0
     } else {
@@ -72,7 +81,7 @@ catch {
         reason=$_.Exception.Message
         exit_code=$null
     }
-    [Console]::Out.WriteLine(($result | ConvertTo-Json -Compress))
+    Write-StepResponse $result
     exit 1
 
 }

@@ -1,0 +1,1 @@
+{"preview":false,"result":{"_time":"2026-11-18T10:00:00Z","host":"synthetic-host","EventCode":"4688","CommandLine":"example.exe --demo","_raw":"synthetic example, not a real Splunk export"}}

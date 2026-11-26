@@ -1,7 +1,7 @@
 from html import escape
 import json
 
-VISUAL_STYLES = '''
+VISUAL_STYLES = """
 .decision-explanation {border:1px solid #cdd7e4;border-radius:8px;padding:14px;margin:12px 0;background:#f8fafc;overflow-wrap:anywhere}
 .decision-summary {line-height:1.65;margin-top:0}
 .decision-tree,.decision-tree ul {list-style:none;padding-left:18px}
@@ -36,51 +36,84 @@ h3,h4,h5,caption {color:#214e78} caption {font-weight:700;text-align:left;paddin
 .compare-table tr.changed {background:#fff9eb}.compare-table th {color:#214e78}
 @media(max-width:650px) {.trace-row {grid-template-columns:minmax(0,1fr)}.trace-arrow {transform:rotate(90deg);justify-self:center}.compare-table {table-layout:auto}}
 @media print {.badge {border:1px solid currentColor}.trace {break-inside:avoid}.back-to-top {display:none}}
-'''
+"""
 TONES = {
-    'Match': 'match',
-    'Unmatch': 'unmatch',
-    'Skipped': 'neutral',
-    'met': 'good',
-    'not_met': 'error',
-    'improved': 'good',
-    'regressed': 'error',
-    'unchanged_met': 'good',
-    'unchanged_not_met': 'error',
-    'insufficient_data': 'warning',
-    'sufficient': 'good',
-    'not_assessed': 'neutral',
-    'error': 'error',
-    'failed': 'error',
-    'completed': 'neutral',
+    "Match": "match",
+    "Unmatch": "unmatch",
+    "Skipped": "neutral",
+    "met": "good",
+    "not_met": "error",
+    "improved": "good",
+    "regressed": "error",
+    "unchanged_met": "good",
+    "unchanged_not_met": "error",
+    "insufficient_data": "warning",
+    "sufficient": "good",
+    "not_assessed": "neutral",
+    "error": "error",
+    "failed": "error",
+    "completed": "neutral",
 }
 
+
 def badge(value):
-    label = str(value) if value is not None else 'Not assessed'
+    label = str(value) if value is not None else "Not assessed"
 
     return f"""<span class="badge tone-{TONES.get(label, 'neutral')}">{escape(label)}</span>"""
 
+
 def decision(value):
-    return badge('Match' if value is True else 'Unmatch' if value is False else 'Skipped')
+    return badge("Match" if value is True else "Unmatch" if value is False else "Skipped")
+
 
 def literal(value):
-    return '<code>' + escape(json.dumps(value, ensure_ascii=False, default=str)) + '</code>'
+    return "<code>" + escape(json.dumps(value, ensure_ascii=False, default=str)) + "</code>"
+
 
 def metrics(counts):
     if not isinstance(counts, dict):
-        return ''
+        return ""
 
-    return '<div class="visual-metrics">' + ''.join(
-        ('<div class="visual-metric">' + badge(key) + '<strong>' + escape(str(value)) + '</strong></div>' for key, value in counts.items() if type(value) in (int, float)),
-    ) + '</div>'
+    return (
+        '<div class="visual-metrics">'
+        + "".join(
+            (
+                '<div class="visual-metric">'
+                + badge(key)
+                + "<strong>"
+                + escape(str(value))
+                + "</strong></div>"
+                for key, value in counts.items()
+                if type(value) in (int, float)
+            ),
+        )
+        + "</div>"
+    )
+
 
 def legend():
-    return '<p class="trace-note">' + ' '.join(
-        (badge(s) for s in ('Match', 'Unmatch', 'Skipped', 'met', 'not_met', 'insufficient_data', 'error')),
-    ) + '<br>Match / Unmatch describe rule decisions. met / not_met describe test expectations. Insufficient data is not a test failure. Arrows show evaluation dependencies, not causality.</p>'
+    return (
+        '<p class="trace-note">'
+        + " ".join(
+            (
+                badge(s)
+                for s in (
+                    "Match",
+                    "Unmatch",
+                    "Skipped",
+                    "met",
+                    "not_met",
+                    "insufficient_data",
+                    "error",
+                )
+            ),
+        )
+        + "<br>Match / Unmatch describe rule decisions. met / not_met describe test expectations. Insufficient data is not a test failure. Arrows show evaluation dependencies, not causality.</p>"
+    )
+
 
 def evaluation_trace(evaluation):
-    checks = evaluation.get('Checks')
+    checks = evaluation.get("Checks")
 
     if not isinstance(checks, dict) or not checks:
         return '<p class="trace-note">No field evaluation trace was recorded.</p>'
@@ -95,7 +128,11 @@ def evaluation_trace(evaluation):
             continue
 
         parts.append(
-            '<details><summary>Block: ' + escape(str(block)) + ' — ' + decision(evaluation.get('Block Results', {}).get(block)) + '</summary>',
+            "<details><summary>Block: "
+            + escape(str(block))
+            + " — "
+            + decision(evaluation.get("Block Results", {}).get(block))
+            + "</summary>",
         )
 
         for name, check in fields.items():
@@ -103,34 +140,83 @@ def evaluation_trace(evaluation):
                 continue
 
             parts.append(
-                '<div class="trace-row"><div class="trace-node"><small>Event field</small>' + escape(str(check.get('Field', name))) + '<br>' + literal(check.get('Actual')) + '</div><span class="trace-arrow" aria-hidden="true">→</span>' + '<div class="trace-node"><small>Rule check</small>' + escape(str(name)) + '<br>Expected: ' + literal(check.get('Expected')) + '</div><span class="trace-arrow" aria-hidden="true">→</span>' + '<div class="trace-node"><small>Check result</small>' + decision(check.get('Matched')) + '<br>' + escape(str(check.get('Reason', 'No reason recorded.'))) + '</div></div>',
+                '<div class="trace-row"><div class="trace-node"><small>Event field</small>'
+                + escape(str(check.get("Field", name)))
+                + "<br>"
+                + literal(check.get("Actual"))
+                + '</div><span class="trace-arrow" aria-hidden="true">→</span>'
+                + '<div class="trace-node"><small>Rule check</small>'
+                + escape(str(name))
+                + "<br>Expected: "
+                + literal(check.get("Expected"))
+                + '</div><span class="trace-arrow" aria-hidden="true">→</span>'
+                + '<div class="trace-node"><small>Check result</small>'
+                + decision(check.get("Matched"))
+                + "<br>"
+                + escape(str(check.get("Reason", "No reason recorded.")))
+                + "</div></div>",
             )
 
-        parts.append('</details>')
+        parts.append("</details>")
 
     parts.append(
-        '<div class="trace-row"><div class="trace-node"><small>Block results</small>' + '<br>'.join(
-            (escape(str(k)) + ': ' + decision(v) for k, v in evaluation.get('Block Results', {}).items()),
-        ) + '</div><span class="trace-arrow" aria-hidden="true">→</span>' + '<div class="trace-node"><small>Condition (exact expression)</small>' + literal(evaluation.get('Condition')) + '</div><span class="trace-arrow" aria-hidden="true">→</span>' + '<div class="trace-node"><small>Event decision</small>' + decision(evaluation.get('Selection')) + '</div></div></div>',
+        '<div class="trace-row"><div class="trace-node"><small>Block results</small>'
+        + "<br>".join(
+            (
+                escape(str(k)) + ": " + decision(v)
+                for k, v in evaluation.get("Block Results", {}).items()
+            ),
+        )
+        + '</div><span class="trace-arrow" aria-hidden="true">→</span>'
+        + '<div class="trace-node"><small>Condition (exact expression)</small>'
+        + literal(evaluation.get("Condition"))
+        + '</div><span class="trace-arrow" aria-hidden="true">→</span>'
+        + '<div class="trace-node"><small>Event decision</small>'
+        + decision(evaluation.get("Selection"))
+        + "</div></div></div>",
     )
 
-    return ''.join(parts)
+    return "".join(parts)
+
+
 _MISSING = object()
+
 
 def differences(before, after, path=()):
     if isinstance(before, dict) and isinstance(after, dict):
         for key in sorted(before.keys() | after.keys(), key=str):
-            yield from differences(before.get(key, _MISSING), after.get(key, _MISSING), path + (key,))
+            yield from differences(
+                before.get(key, _MISSING), after.get(key, _MISSING), path + (key,)
+            )
     elif type(before) is not type(after) or before != after:
         yield (path, before, after)
+
 
 def comparison_table(before, after, title):
     rows = []
 
     for path, left, right in differences(before, after):
-        display = lambda value: '<em>Absent</em>' if value is _MISSING else literal(value)
+        display = lambda value: "<em>Absent</em>" if value is _MISSING else literal(value)
         rows.append(
-            '<tr class="changed"><th scope="row">' + literal(list(path)) + '</th><td>' + display(left) + '</td><td>' + display(right) + '</td></tr>',
+            '<tr class="changed"><th scope="row">'
+            + literal(list(path))
+            + "</th><td>"
+            + display(left)
+            + "</td><td>"
+            + display(right)
+            + "</td></tr>",
         )
 
-    return '<div class="trace"><h4>' + escape(title) + '</h4>' + ('<div class="checks-scroll"><table class="compare-table"><thead><tr><th>Field path</th><th>Baseline</th><th>Candidate</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>' if rows else '<p>No recorded values changed.</p>') + '</div>'
+    return (
+        '<div class="trace"><h4>'
+        + escape(title)
+        + "</h4>"
+        + (
+            '<div class="checks-scroll"><table class="compare-table"><thead><tr><th>Field path</th><th>Baseline</th><th>Candidate</th></tr></thead><tbody>'
+            + "".join(rows)
+            + "</tbody></table></div>"
+            if rows
+            else "<p>No recorded values changed.</p>"
+        )
+        + "</div>"
+    )

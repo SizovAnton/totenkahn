@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "hypothesis": "Synthetic process-start records contain the explicit --demo marker",
+  "scope": {"field": "/event_id", "op": "equals", "value": "process-start"},
+  "condition": {
+    "all": [
+      {"field": "/command_line", "op": "contains", "value": "--demo"},
+      {"not": {"field": "/command_line", "op": "contains", "value": "--excluded"}}
+    ]
+  }
+}

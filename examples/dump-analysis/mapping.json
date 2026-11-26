@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "id": "synthetic-dump-demo-v1",
+  "logsource": {"product": "windows", "service": "totenkahn-demo"},
+  "fields": {"CommandLine": "/command_line"}
+}

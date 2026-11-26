@@ -1,4 +1,3 @@
-
 import argparse
 from datetime import datetime, timezone
 import json
@@ -19,49 +18,66 @@ from handlers.release_manifest import (
     describe_file,
     validate_commit,
 )
-# from handlers.package_cache import load_dependency_lock, obtain_package
+
 from handlers.cli_result import STATUS_CODES, status_code, run_cli
 from handlers.process_control import terminate_process
 
-PACKAGES = ('PyInstaller==6.22.3', 'PyYAML==6.0.3', 'rich==15.0.0')
+PACKAGES = ("PyInstaller==6.22.3", "PyYAML==6.0.3", "rich==15.0.0")
+
 
 def snapshot(root):
-    paths = [root / name for name in (
-        'main.py',
-        'totenkahn_setup.py',
-        'validation.py',
-        'prepare_acceptance_release.py',
-        'README.md',
-        'LICENSE',
-        'pyrightconfig.json',
-        'requirements-quality.txt',
-    )]
+    paths = [
+        root / name
+        for name in (
+            "main.py",
+            "totenkahn_setup.py",
+            "validation.py",
+            "prepare_acceptance_release.py",
+            "README.md",
+            "LICENSE",
+            "pyrightconfig.json",
+            "requirements-quality.txt",
+        )
+    ]
 
-    for folder in ('handlers', 'reporting', 'displaying', 'rule_condition', 'scripts'):
+    for folder in ("handlers", "reporting", "displaying", "rule_condition", "scripts"):
         paths.extend(
-            (p for p in (root / folder).rglob('*') if (
-                p.is_file()
-                and ('__pycache__' not in p.parts)
-                and (p.suffix in {'.py', '.ps1', '.json', '.yaml', '.yml'})
-            )),
+            (
+                p
+                for p in (root / folder).rglob("*")
+                if (
+                    p.is_file()
+                    and ("__pycache__" not in p.parts)
+                    and (p.suffix in {".py", ".ps1", ".json", ".yaml", ".yml"})
+                )
+            ),
         )
 
     paths.extend(
-        (p for p in (root / 'examples').rglob('*') if p.is_file() and '__pycache__' not in p.parts),
+        (p for p in (root / "examples").rglob("*") if p.is_file() and "__pycache__" not in p.parts),
     )
     paths.extend(
-        (root / 'config' / name for name in ('default.config', 'components.json', 'dependencies.lock.json')),
+        (
+            root / "config" / name
+            for name in (
+                "default.config",
+                "components.json",
+                "dependencies.lock.json",
+                "atomic-files.lock.json",
+            )
+        ),
     )
-    paths.extend(sorted((root / '.github/workflows').glob('*.yml')))
+    paths.extend(sorted((root / ".github/workflows").glob("*.yml")))
 
     return {p.relative_to(root).as_posix(): describe_file(p) for p in sorted(paths)}
 
-def run_step(command, log, cwd, timeout=900, allowed=(0,)):
-    print(f'Starting: {log.stem}; log: {log}', flush=True)
-    started = time.monotonic()
-    env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
 
-    with log.open('wb') as output:
+def run_step(command, log, cwd, timeout=900, allowed=(0,)):
+    print(f"Starting: {log.stem}; log: {log}", flush=True)
+    started = time.monotonic()
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+
+    with log.open("wb") as output:
         process = subprocess.Popen(
             [str(a) for a in command],
             cwd=cwd,
@@ -77,10 +93,10 @@ def run_step(command, log, cwd, timeout=900, allowed=(0,)):
                 elapsed = time.monotonic() - started
 
                 if elapsed > timeout:
-                    raise TimeoutError(f'{log.stem} exceeded {timeout}s; see {log}')
+                    raise TimeoutError(f"{log.stem} exceeded {timeout}s; see {log}")
 
                 if elapsed >= next_notice:
-                    print(f'Running: {log.stem} ({int(elapsed)}s)', flush=True)
+                    print(f"Running: {log.stem} ({int(elapsed)}s)", flush=True)
                     next_notice += 15
 
                 time.sleep(0.2)
@@ -89,237 +105,253 @@ def run_step(command, log, cwd, timeout=900, allowed=(0,)):
                 terminate_process(process)
 
     if process.returncode not in allowed:
-        tail = log.read_text(encoding='utf-8', errors='replace')[-5000:]
-        raise RuntimeError(f'{log.stem} exited {process.returncode}.\n{tail}')
+        tail = log.read_text(encoding="utf-8", errors="replace")[-5000:]
 
-    print(f'Finished: {log.stem} (exit {process.returncode})', flush=True)
+        raise RuntimeError(f"{log.stem} exited {process.returncode}.\n{tail}")
+
+    print(f"Finished: {log.stem} (exit {process.returncode})", flush=True)
 
     return process.returncode
+
 
 def package_release(root, build, baseline):
     from importlib.metadata import distributions
 
-    expected = json.loads((build / 'source-inputs.json').read_text(encoding='utf-8'))
+    expected = json.loads((build / "source-inputs.json").read_text(encoding="utf-8"))
 
     if snapshot(root) != expected:
-        raise ValueError('Source inputs changed during the build; start a new build')
+        raise ValueError("Source inputs changed during the build; start a new build")
 
-    for gate in ('quality', 'source-checks'):
-        gate_report = json.loads((build / gate / 'report.json').read_text(encoding='utf-8'))
+    for gate in ("quality", "source-checks"):
+        gate_report = json.loads((build / gate / "report.json").read_text(encoding="utf-8"))
 
-        if gate_report.get('status') != 'passed':
-            raise ValueError('Required build gate did not pass: ' + gate)
+        if gate_report.get("status") != "passed":
+            raise ValueError("Required build gate did not pass: " + gate)
 
-    release = build / 'release'
+    release = build / "release"
     release.mkdir(exist_ok=False)
 
-    for name in ('totenkahn', 'totenkahn-setup'):
-        bundle = build / 'dist' / name
+    for name in ("totenkahn", "totenkahn-setup"):
+        bundle = build / "dist" / name
 
-        if not (bundle / (name + '.exe')).is_file():
-            raise ValueError(f'Missing executable: {name}')
+        if not (bundle / (name + ".exe")).is_file():
+            raise ValueError(f"Missing executable: {name}")
 
         for source in bundle.iterdir():
             destination = release / source.name
 
             if destination.exists():
-                raise ValueError(f'Executable bundle collision: {destination}')
+                raise ValueError(f"Executable bundle collision: {destination}")
 
             if source.is_dir():
                 shutil.copytree(source, destination)
             else:
                 shutil.copy2(source, destination)
 
-    (release / 'config').mkdir()
+    (release / "config").mkdir()
 
-    for name in ('default.config', 'components.json', 'dependencies.lock.json'):
-        shutil.copy2(root / 'config' / name, release / 'config' / name)
+    for name in (
+        "default.config",
+        "components.json",
+        "dependencies.lock.json",
+        "atomic-files.lock.json",
+    ):
+        shutil.copy2(root / "config" / name, release / "config" / name)
 
-    (release / 'config/config.json').write_text('{}\n', encoding='utf-8')
-    (release / 'scripts').mkdir()
+    (release / "config/config.json").write_text("{}\n", encoding="utf-8")
+    (release / "scripts").mkdir()
 
-    for source in (root / 'scripts').glob('*.ps1'):
-        shutil.copy2(source, release / 'scripts' / source.name)
+    for source in (root / "scripts").glob("*.ps1"):
+        shutil.copy2(source, release / "scripts" / source.name)
 
     shutil.copytree(
-        root / 'examples',
-        release / 'examples',
-        ignore=shutil.ignore_patterns('__pycache__'),
+        root / "examples",
+        release / "examples",
+        ignore=shutil.ignore_patterns("__pycache__"),
     )
 
-    for name in ('README.md', 'LICENSE'):
+    for name in ("README.md", "LICENSE"):
         shutil.copy2(root / name, release / name)
 
-    shutil.copy2(build / 'build-environment.txt', release / 'build-environment.txt')
+    shutil.copy2(build / "build-environment.txt", release / "build-environment.txt")
 
-    for gate in ('quality', 'source-checks'):
-        shutil.copy2(build / gate / 'report.json', release / (gate + '-report.json'))
+    for gate in ("quality", "source-checks"):
+        shutil.copy2(build / gate / "report.json", release / (gate + "-report.json"))
 
-    licenses = release / 'licenses'
+    licenses = release / "licenses"
     licenses.mkdir()
     notices = [
-        'TOTENKAHN internal acceptance build. Not a production release.',
-        'Inventory includes build tools as well as runtime dependencies.',
-        '',
+        "TOTENKAHN internal acceptance build. Not a production release.",
+        "Inventory includes build tools as well as runtime dependencies.",
+        "",
     ]
 
-    for dist in sorted(distributions(), key=lambda d: d.metadata['Name'].lower()):
-        name = dist.metadata['Name']
-        notices.append(name + ' ' + dist.version)
+    for dist in sorted(distributions(), key=lambda d: d.metadata["Name"].lower()):
+        name = dist.metadata["Name"]
+        notices.append(name + " " + dist.version)
 
         for entry in dist.files or []:
-            if any((token in entry.name.lower() for token in ('license', 'copying', 'notice'))):
+            if any((token in entry.name.lower() for token in ("license", "copying", "notice"))):
                 source = Path(str(dist.locate_file(entry)))
 
                 if source.is_file():
                     folder = licenses / name
                     folder.mkdir(exist_ok=True)
-                    shutil.copy2(source, folder / (str(len(list(folder.iterdir()))) + '-' + entry.name))
+                    shutil.copy2(
+                        source, folder / (str(len(list(folder.iterdir()))) + "-" + entry.name)
+                    )
 
-    shutil.copy2(Path(sys.base_prefix) / 'LICENSE.txt', licenses / 'Python-LICENSE.txt')
-    (release / 'THIRD_PARTY_NOTICES.txt').write_text(
-        '\n'.join(notices) + '\n',
-        encoding='utf-8',
+    shutil.copy2(Path(sys.base_prefix) / "LICENSE.txt", licenses / "Python-LICENSE.txt")
+    (release / "THIRD_PARTY_NOTICES.txt").write_text(
+        "\n".join(notices) + "\n",
+        encoding="utf-8",
     )
-    (release / 'build-provenance.json').write_text(
+    (release / "build-provenance.json").write_text(
         json.dumps(
             {
-                'purpose': 'internal_windows_report_and_installer_acceptance',
-                'reference_commit': baseline,
-                'source_state': 'Local modified source snapshot; reference commit is not an exact release revision',
-                'source_files': expected,
-                'inputs_unchanged_during_build': True,
-                'python_version': sys.version,
-                'platform': sys.platform,
+                "purpose": "internal_windows_report_and_installer_acceptance",
+                "reference_commit": baseline,
+                "source_state": "Local modified source snapshot; reference commit is not an exact release revision",
+                "source_files": expected,
+                "inputs_unchanged_during_build": True,
+                "python_version": sys.version,
+                "platform": sys.platform,
             },
             indent=2,
         ),
-        encoding='utf-8',
+        encoding="utf-8",
     )
 
     if snapshot(root) != expected:
-        raise ValueError('Source inputs changed while packaging')
+        raise ValueError("Source inputs changed while packaging")
 
     write_manifest(
         release,
         build_manifest(
             release,
-            version='0.0.0-acceptance.' + datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'),
+            version="0.0.0-acceptance." + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
             source_commit=baseline,
         ),
     )
     result = verify_release(release)
 
-    if result['status'] != 'passed':
-        raise ValueError('Packaged release verification failed: ' + json.dumps(result))
+    if result["status"] != "passed":
+        raise ValueError("Packaged release verification failed: " + json.dumps(result))
 
     return release
 
+
 def main():
-    parser = argparse.ArgumentParser(description='Build both Windows executables, package a test release and run acceptance.')
-    parser.add_argument('--cache', type=Path, default=ROOT / '.totenkahn-package-cache')
-    parser.add_argument(
-        '--source-commit',
-        required=True,
-        help='Reference Git commit; local changes recorded separately',
+    parser = argparse.ArgumentParser(
+        description="Build both Windows executables, package a test release and run acceptance."
     )
-    parser.add_argument('--package-only', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--cache", type=Path, default=ROOT / ".totenkahn-package-cache")
+    parser.add_argument(
+        "--source-commit",
+        required=True,
+        help="Reference Git commit; local changes recorded separately",
+    )
+    parser.add_argument("--package-only", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     validate_commit(args.source_commit)
 
-    if sys.platform != 'win32':
-        parser.error('Windows executables must be built and accepted on Windows')
+    if sys.platform != "win32":
+        parser.error("Windows executables must be built and accepted on Windows")
 
     if sys.version_info < (3, 12):
-        parser.error('Python 3.12 or newer is required')
+        parser.error("Python 3.12 or newer is required")
 
     if args.package_only:
         print(package_release(ROOT, args.package_only, args.source_commit))
 
         return 0
 
-    build = ROOT / 'build' / ('windows-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid4().hex[:6])
+    build = (
+        ROOT
+        / "build"
+        / ("windows-" + datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:6])
+    )
     build.mkdir(parents=True)
-    print(f'Build directory: {build}', flush=True)
+    print(f"Build directory: {build}", flush=True)
     report = {
-        'status': 'error',
-        'build_directory': str(build),
-        'build_status': 'error',
-        'acceptance_status': 'not_started',
-        'atomic_tests_executed': 0,
+        "status": "error",
+        "build_directory": str(build),
+        "build_status": "error",
+        "acceptance_status": "not_started",
+        "atomic_tests_executed": 0,
     }
 
     try:
-        (build / 'source-inputs.json').write_text(
+        (build / "source-inputs.json").write_text(
             json.dumps(snapshot(ROOT), indent=2),
-            encoding='utf-8',
+            encoding="utf-8",
         )
-        run_step([sys.executable, '-m', 'venv', build / 'venv'], build / '01-venv.log', ROOT)
-        python = build / 'venv/Scripts/python.exe'
+        run_step([sys.executable, "-m", "venv", build / "venv"], build / "01-venv.log", ROOT)
+        python = build / "venv/Scripts/python.exe"
         run_step(
             [
                 python,
-                '-m',
-                'pip',
-                '--disable-pip-version-check',
-                'install',
+                "-m",
+                "pip",
+                "--disable-pip-version-check",
+                "install",
                 *PACKAGES,
-                '-r',
-                ROOT / 'requirements-quality.txt',
+                "-r",
+                ROOT / "requirements-quality.txt",
             ],
-            build / '02-dependencies.log',
+            build / "02-dependencies.log",
             ROOT,
         )
-        run_step([python, '-m', 'pip', 'check'], build / '03-pip-check.log', ROOT)
-        run_step([python, '-m', 'pip', 'freeze'], build / 'build-environment.txt', ROOT)
+        run_step([python, "-m", "pip", "check"], build / "03-pip-check.log", ROOT)
+        run_step([python, "-m", "pip", "freeze"], build / "build-environment.txt", ROOT)
         run_step(
-            [python, '-B', ROOT / 'scripts/check_quality.py', '--output-dir', build / 'quality'],
-            build / '04-quality.log',
+            [python, "-B", ROOT / "scripts/check_quality.py", "--output-dir", build / "quality"],
+            build / "04-quality.log",
             ROOT,
         )
         run_step(
             [
                 python,
-                '-B',
-                ROOT / 'scripts/check_setup_stage.py',
-                '--source-only',
-                '--output-dir',
-                build / 'source-checks',
+                "-B",
+                ROOT / "scripts/check_setup_stage.py",
+                "--source-only",
+                "--output-dir",
+                build / "source-checks",
             ],
-            build / '05-source-checks.log',
+            build / "05-source-checks.log",
             ROOT,
         )
 
         for name, entry, libraries in [
-            ('totenkahn', 'main.py', '_internal-app'),
-            ('totenkahn-setup', 'totenkahn_setup.py', '_internal-setup'),
+            ("totenkahn", "main.py", "_internal-app"),
+            ("totenkahn-setup", "totenkahn_setup.py", "_internal-setup"),
         ]:
             run_step(
                 [
                     python,
-                    '-m',
-                    'PyInstaller',
-                    '--onedir',
-                    '--console',
-                    '--noupx',
-                    '--name',
+                    "-m",
+                    "PyInstaller",
+                    "--onedir",
+                    "--console",
+                    "--noupx",
+                    "--name",
                     name,
-                    '--contents-directory',
+                    "--contents-directory",
                     libraries,
-                    '--distpath',
-                    build / 'dist',
-                    '--workpath',
-                    build / 'work',
-                    '--specpath',
+                    "--distpath",
+                    build / "dist",
+                    "--workpath",
+                    build / "work",
+                    "--specpath",
                     build,
                     ROOT / entry,
                 ],
-                build / (name + '-build.log'),
+                build / (name + "-build.log"),
                 ROOT,
             )
             run_step(
-                [build / 'dist' / name / (name + '.exe'), '--help'],
-                build / (name + '-help.log'),
+                [build / "dist" / name / (name + ".exe"), "--help"],
+                build / (name + "-help.log"),
                 ROOT,
                 timeout=60,
             )
@@ -327,77 +359,593 @@ def main():
         run_step(
             [
                 python,
-                '-B',
+                "-B",
                 Path(__file__),
-                '--source-commit',
+                "--source-commit",
                 args.source_commit,
-                '--package-only',
+                "--package-only",
                 build,
             ],
-            build / 'package.log',
+            build / "package.log",
             ROOT,
         )
-        release = build / 'release'
-        report.update(build_status='passed', release_dir=str(release))
+        release = build / "release"
+        report.update(build_status="passed", release_dir=str(release))
         run_step(
             [
-                release / 'totenkahn.exe',
-                'ci',
-                '--config',
-                release / 'examples/ci/pipeline.json',
-                '--output-dir',
-                build / 'ci',
+                release / "totenkahn.exe",
+                "ci",
+                "--config",
+                release / "examples/ci/pipeline.json",
+                "--output-dir",
+                build / "ci",
             ],
-            build / '06-executable-ci.log',
+            build / "06-executable-ci.log",
             ROOT,
         )
-        report['ci_report'] = str(build / 'ci/report.json')
+        report["ci_report"] = str(build / "ci/report.json")
+        run_step(
+            [release / "totenkahn.exe", "test", "auto", "--help"], build / "06-test-help.log", ROOT
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "test",
+                "replay",
+                "--rule",
+                release / "examples/ci/candidate.yaml",
+                "--session",
+                release / "examples/regression/session",
+                "-vv",
+            ],
+            build / "06-test-replay.log",
+            ROOT,
+        )
+        run_step(
+            [release / "totenkahn.exe", "self-test", "--help"], build / "06-offline-help.log", ROOT
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "self-test",
+                "operations",
+                "--events",
+                "1000",
+                "--output-dir",
+                build / "operations-smoke",
+                "--json",
+            ],
+            build / "06-operations.log",
+            ROOT,
+        )
+        report["operations_report"] = str(build / "operations-smoke/report.json")
+        report["test_cli_checks"] = {"help": "passed", "replay": "passed", "live": "not_tested"}
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "dump",
+                "import",
+                release / "examples/dumps/generic.jsonl",
+                "--profile",
+                "generic-v1",
+                "--output-dir",
+                build / "evidence-smoke",
+                "--json",
+            ],
+            build / "07-evidence-import.log",
+            ROOT,
+        )
+        run_step(
+            [release / "totenkahn.exe", "dump", "verify", build / "evidence-smoke", "--json"],
+            build / "08-evidence-verify.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "dump",
+                "show",
+                build / "evidence-smoke",
+                "--row",
+                "1",
+                "--json",
+            ],
+            build / "09-evidence-show.log",
+            ROOT,
+        )
+        report["evidence_report"] = str(build / "evidence-smoke/manifest.json")
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "dump",
+                "select",
+                build / "evidence-smoke",
+                "--event-type",
+                "process-start",
+                "--output-dir",
+                build / "evidence-selection",
+                "--json",
+            ],
+            build / "10-evidence-selection.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "dump",
+                "analyze",
+                build / "evidence-smoke",
+                "--selection",
+                build / "evidence-selection",
+                "--rule",
+                release / "examples/dump-analysis/rule.yaml",
+                "--mapping",
+                release / "examples/dump-analysis/mapping.json",
+                "--output-dir",
+                build / "evidence-analysis",
+                "--json",
+            ],
+            build / "11-evidence-analysis.log",
+            ROOT,
+        )
+        report["dump_analysis_report"] = str(build / "evidence-analysis/report.json")
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "create",
+                "--title",
+                "Synthetic acceptance case",
+                "--output-dir",
+                build / "case-smoke",
+                "--json",
+            ],
+            build / "12-case-create.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "add",
+                build / "case-smoke",
+                "--dataset",
+                build / "evidence-smoke",
+                "--selection",
+                build / "evidence-selection",
+                "--json",
+            ],
+            build / "13-case-add.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "note",
+                build / "case-smoke",
+                "--author",
+                "acceptance-fixture",
+                "--text",
+                "Synthetic evidence only",
+                "--json",
+            ],
+            build / "14-case-note.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "timeline",
+                build / "case-smoke",
+                "--output-dir",
+                build / "case-timeline",
+                "--json",
+            ],
+            build / "15-case-timeline.log",
+            ROOT,
+        )
+        run_step(
+            [release / "totenkahn.exe", "case", "verify", build / "case-smoke", "--json"],
+            build / "16-case-verify.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "export",
+                build / "case-smoke",
+                "--output",
+                build / "case-export.zip",
+                "--json",
+            ],
+            build / "17-case-export.log",
+            ROOT,
+        )
+        report["case_timeline_report"] = str(build / "case-timeline/report.json")
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "hunt",
+                "define",
+                build / "case-smoke",
+                "--name",
+                "demo-process",
+                "--author",
+                "acceptance-fixture",
+                "--spec",
+                release / "examples/hunts/demo-process.json",
+                "--json",
+            ],
+            build / "18-hunt-define.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "hunt",
+                "run",
+                build / "case-smoke",
+                "--name",
+                "demo-process",
+                "--output-dir",
+                build / "hunt-smoke",
+                "--json",
+            ],
+            build / "19-hunt-run.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "hunt",
+                "scope",
+                build / "hunt-smoke",
+                "--by",
+                "host",
+                "--value",
+                "synthetic-host",
+                "--json",
+            ],
+            build / "20-hunt-scope.log",
+            ROOT,
+        )
+        report["hunt_report"] = str(build / "hunt-smoke/report.json")
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "dump",
+                "import",
+                release / "examples/findings/events.jsonl",
+                "--profile",
+                "generic-v1",
+                "--output-dir",
+                build / "finding-evidence",
+                "--json",
+            ],
+            build / "21-finding-import.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "create",
+                "--title",
+                "Reviewed fixture findings",
+                "--output-dir",
+                build / "finding-case",
+                "--json",
+            ],
+            build / "22-finding-case.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "case",
+                "add",
+                build / "finding-case",
+                "--dataset",
+                build / "finding-evidence",
+                "--label",
+                "fixture",
+                "--json",
+            ],
+            build / "23-finding-attach.log",
+            ROOT,
+        )
+
+        for name, row, expected in [("positive", "1", "match"), ("negative", "2", "no-match")]:
+            run_step(
+                [
+                    release / "totenkahn.exe",
+                    "finding",
+                    "add",
+                    build / "finding-case",
+                    "--name",
+                    name,
+                    "--title",
+                    "Reviewed synthetic " + name,
+                    "--author",
+                    "acceptance-fixture",
+                    "--reason",
+                    "Explicit fixture expectation",
+                    "--expect",
+                    expected,
+                    "--attachment",
+                    "fixture",
+                    "--row",
+                    row,
+                    "--json",
+                ],
+                build / ("24-finding-" + name + ".log"),
+                ROOT,
+            )
+
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "finding",
+                "export",
+                build / "finding-case",
+                "--name",
+                "positive",
+                "--name",
+                "negative",
+                "--baseline",
+                release / "examples/findings/baseline.yaml",
+                "--candidate",
+                release / "examples/findings/candidate.yaml",
+                "--mapping",
+                release / "examples/dump-analysis/mapping.json",
+                "--output-dir",
+                build / "finding-bundle",
+                "--json",
+            ],
+            build / "25-finding-export.log",
+            ROOT,
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "ci",
+                "--config",
+                build / "finding-bundle/pipeline.json",
+                "--output-dir",
+                build / "finding-ci",
+            ],
+            build / "26-finding-ci.log",
+            ROOT,
+        )
+        positive = json.loads((build / "finding-ci/report.json").read_text(encoding="utf-8"))
+
+        if positive["status"] != "passed" or positive["jobs"][0]["counts"] != {
+            "regressed": 0,
+            "not_met": 0,
+            "insufficient": 0,
+            "cases": 2,
+        }:
+            raise ValueError("Finding CI fixture did not prove both reviewed expectations")
+
+        negative_config = json.loads(
+            (build / "finding-bundle/pipeline.json").read_text(encoding="utf-8")
+        )
+        negative_config["jobs"][0].update(
+            suite=str(build / "finding-bundle/suite.json"),
+            baseline=str(build / "finding-bundle/baseline.yaml"),
+            candidate=str(release / "examples/findings/regressed.yaml"),
+        )
+        (build / "finding-negative.json").write_text(
+            json.dumps(negative_config, indent=2), encoding="utf-8"
+        )
+        run_step(
+            [
+                release / "totenkahn.exe",
+                "ci",
+                "--config",
+                build / "finding-negative.json",
+                "--output-dir",
+                build / "finding-negative-ci",
+            ],
+            build / "27-finding-negative-gate.log",
+            ROOT,
+            allowed=(1,),
+        )
+        negative = json.loads(
+            (build / "finding-negative-ci/report.json").read_text(encoding="utf-8")
+        )
+
+        if negative["status"] != "failed" or negative["jobs"][0]["counts"]["regressed"] != 1:
+            raise ValueError(
+                "Finding negative control did not reject the intentional rule regression"
+            )
+
+        report["finding_ci_report"] = str(build / "finding-ci/report.json")
+        report["finding_negative_control"] = {
+            "status": "passed",
+            "expected_ci_status": "failed",
+            "report": str(build / "finding-negative-ci/report.json"),
+        }
+
+        source_checks = {}
+
+        for source_name, filename, profile in (
+            ("windows", "security.xml", None),
+            ("splunk", "splunk.jsonl", "splunk-raw-windows-v1"),
+            ("conflict", "conflict.jsonl", "splunk-raw-windows-v1"),
+        ):
+            dataset = build / ("source-" + source_name)
+            arguments = [
+                release / "totenkahn.exe",
+                "dump",
+                "import",
+                release / "examples/source-readiness" / filename,
+                "--output-dir",
+                dataset,
+                "--json",
+            ]
+
+            if profile:
+                arguments += ["--profile", profile]
+
+            run_step(arguments, build / ("28-source-" + source_name + ".log"), ROOT)
+
+            for preflight in (True, False):
+                name = source_name + ("-preflight" if preflight else "-analysis")
+                output = build / ("source-" + name)
+                arguments = [
+                    release / "totenkahn.exe",
+                    "dump",
+                    "analyze",
+                    dataset,
+                    "--rule",
+                    release / "examples/source-readiness/rule.yaml",
+                    "--output-dir",
+                    output,
+                    "--json",
+                ]
+
+                if preflight:
+                    arguments += ["--preflight"]
+
+                run_step(
+                    arguments,
+                    build / ("29-source-" + name + ".log"),
+                    ROOT,
+                    allowed=(3,) if source_name == "conflict" else (0,),
+                )
+                checked = json.loads((output / "report.json").read_text(encoding="utf-8"))
+                item = checked["rules"][0]
+                expected = 0 if source_name == "conflict" else 1
+
+                if item["readiness"]["fully_evaluable"] != expected:
+                    raise ValueError("Frozen source readiness did not match the fixture")
+
+                if not preflight and item["counts"] != (
+                    {"insufficient_data": 1} if source_name == "conflict" else {"match": 1}
+                ):
+                    raise ValueError("Frozen source parity or conflict control failed")
+
+                if preflight and (output / "rule-0001/events.jsonl").exists():
+                    raise ValueError("Preflight unexpectedly evaluated events")
+
+                source_checks[name] = str(output / "report.json")
+
+        report["source_readiness_reports"] = source_checks
+
+        input_checks = {}
+
+        for filename in ("events.csv", "events.tsv", "events.csv.gz", "events.jsonl.gz"):
+            name = filename.replace(".", "-")
+            dataset = build / ("input-" + name)
+            run_step(
+                [
+                    release / "totenkahn.exe",
+                    "dump",
+                    "import",
+                    release / "examples/input-values" / filename,
+                    "--profile",
+                    "generic-v1",
+                    "--output-dir",
+                    dataset,
+                    "--json",
+                ],
+                build / ("30-input-" + name + ".log"),
+                ROOT,
+            )
+            run_step(
+                [release / "totenkahn.exe", "dump", "verify", dataset, "--json"],
+                build / ("31-input-verify-" + name + ".log"),
+                ROOT,
+            )
+            output = build / ("input-analysis-" + name)
+            run_step(
+                [
+                    release / "totenkahn.exe",
+                    "dump",
+                    "analyze",
+                    dataset,
+                    "--rule",
+                    release / "examples/input-values/rule.yaml",
+                    "--mapping",
+                    release / "examples/input-values/mapping.json",
+                    "--output-dir",
+                    output,
+                    "--json",
+                ],
+                build / ("32-input-analysis-" + name + ".log"),
+                ROOT,
+                allowed=(3,),
+            )
+            checked = json.loads((output / "report.json").read_text(encoding="utf-8"))
+
+            if checked["rules"][0]["counts"] != {"match": 1, "no_match": 1, "insufficient_data": 1}:
+                raise ValueError("Frozen input format/value operator control failed")
+
+            if checked["rules"][0]["readiness"]["fully_evaluable"] != 2:
+                raise ValueError("Frozen input suitability control failed")
+
+            input_checks[filename] = str(output / "report.json")
+
+        report["input_value_reports"] = input_checks
+
         code = run_step(
             [
                 python,
-                '-u',
-                '-B',
-                ROOT / 'scripts/check_setup_stage.py',
-                '--cache',
+                "-u",
+                "-B",
+                ROOT / "scripts/check_setup_stage.py",
+                "--cache",
                 args.cache.resolve(),
-                '--release-dir',
+                "--release-dir",
                 release,
-                '--portable',
-                '--output-dir',
-                build / 'acceptance',
+                "--portable",
+                "--output-dir",
+                build / "acceptance",
             ],
-            build / 'acceptance.log',
+            build / "acceptance.log",
             ROOT,
             timeout=3600,
             allowed=(0, 1, 2, 3, 130),
         )
-        acceptance = json.loads((build / 'acceptance/report.json').read_text(encoding='utf-8'))
+        acceptance = json.loads((build / "acceptance/report.json").read_text(encoding="utf-8"))
         expected_codes = STATUS_CODES
 
-        if expected_codes.get(acceptance['status']) != code:
-            raise ValueError('Acceptance status and exit code disagree')
+        if expected_codes.get(acceptance["status"]) != code:
+            raise ValueError("Acceptance status and exit code disagree")
 
         report.update(
-            status=acceptance['status'],
-            acceptance_status=acceptance['status'],
-            limitations=acceptance.get('limitations', []),
-            acceptance_report=str(build / 'acceptance/report.json'),
+            status=acceptance["status"],
+            acceptance_status=acceptance["status"],
+            limitations=acceptance.get("limitations", []),
+            acceptance_report=str(build / "acceptance/report.json"),
             release_dir=str(release),
         )
     except KeyboardInterrupt:
         report.update(
-            status='interrupted',
-            reason='Build interrupted; partial artifacts and logs retained',
+            status="interrupted",
+            reason="Build interrupted; partial artifacts and logs retained",
         )
-    except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as exc:
-        report.update(status='error', error_type=type(exc).__name__, reason=str(exc))
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        KeyError,
+        TypeError,
+        subprocess.SubprocessError,
+    ) as exc:
+        report.update(status="error", error_type=type(exc).__name__, reason=str(exc))
 
-    path = build / 'build-report.json'
-    path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf-8')
+    path = build / "build-report.json"
+    path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    print(f'Build report: {path}')
+    print(f"Build report: {path}")
 
-    return status_code(report['status'])
+    return status_code(report["status"])
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     raise SystemExit(run_cli(main))

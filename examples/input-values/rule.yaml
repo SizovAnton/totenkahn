@@ -1,0 +1,9 @@
+title: Numeric and network fixture
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    Score|gte: 10
+    Address|cidr: 192.0.2.0/24
+  condition: selection

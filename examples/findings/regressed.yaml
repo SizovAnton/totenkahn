@@ -1,0 +1,9 @@
+title: Synthetic reviewed marker
+id: synthetic-finding-rule
+logsource:
+  product: windows
+  service: totenkahn-demo
+detection:
+  selection:
+    CommandLine|contains: '--wrong-marker'
+  condition: selection

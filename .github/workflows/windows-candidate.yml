@@ -51,5 +51,15 @@ jobs:
             build/windows-*/acceptance/*.json
             build/windows-*/acceptance/*.txt
             build/windows-*/ci/
+            build/windows-*/evidence-smoke/
+            build/windows-*/evidence-selection/
+            build/windows-*/evidence-analysis/
+            build/windows-*/case-smoke/
+            build/windows-*/case-timeline/
+            build/windows-*/hunt-smoke/
+            build/windows-*/finding-*/
+            build/windows-*/source-*/
+            build/windows-*/input-*/
+            build/windows-*/case-export.zip
           if-no-files-found: warn
           retention-days: 14
