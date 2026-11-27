@@ -7,5 +7,5 @@ detection:
   selection:
     CommandLine|contains: TOTENKAHN_LIVE_
   positive:
-    CommandLine|contains: _NEVER_EXECUTED
+    CommandLine|contains: _POSITIVE
   condition: selection and positive
