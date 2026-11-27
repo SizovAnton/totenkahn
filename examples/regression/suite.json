@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "suite_id": "synthetic-demo",
+  "description": "Synthetic fixtures: one improvement, one regression, one insufficient case.",
+  "cases": [
+    {
+      "test_case": "positive.json",
+      "session": "session"
+    },
+    {
+      "test_case": "negative.json",
+      "session": "session"
+    },
+    {
+      "test_case": "insufficient.json",
+      "session": "session"
+    }
+  ]
+}

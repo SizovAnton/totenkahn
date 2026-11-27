@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "case_id": "negative",
+  "session_id": "synthetic-regression-demo",
+  "description": "Synthetic negative regression example",
+  "evidence": {
+    "method": "manual_record_ids",
+    "reason": "Synthetic fixture membership; no real activity is asserted.",
+    "record_ids": [
+      "negative"
+    ]
+  },
+  "expectation": {
+    "scope": "selected_events",
+    "expected_rule_match": false
+  },
+  "telemetry": {
+    "scope": "selected_events",
+    "requirements": [
+      {
+        "id": "required-context",
+        "selector": [],
+        "min_count": 1,
+        "required_fields": [
+          [
+            "data_fields",
+            "context"
+          ]
+        ]
+      }
+    ]
+  }
+}

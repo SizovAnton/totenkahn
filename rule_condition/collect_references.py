@@ -14,5 +14,3 @@ def collect_references(node):
         return left | right
 
     raise ValueError(f"Unknown node type: {node_type!r}")
-
-

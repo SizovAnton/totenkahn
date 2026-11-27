@@ -1,0 +1,2 @@
+# Build/development tooling only; not an application runtime dependency.
+pyright[nodejs]==1.1.414

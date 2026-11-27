@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "case_id": "manual-local-users-001-telemetry-v2",
+  "session_id": "bd045787-b8ea-4f94-ba1e-611b7098a30e",
+  "description": "Validate detection of the manually executed local user enumeration.",
+  "evidence": {
+    "method": "manual_record_ids",
+    "reason": "Selected by the engineer using the command line, host and execution time of the manual action.",
+    "record_ids": [
+      "f91be5d1-aacc-48cf-81af-2b30dcad493b"
+    ]
+  },
+  "expectation": {
+    "scope": "selected_events",
+    "expected_rule_match": true
+  },
+  "telemetry": {
+    "scope": "selected_events",
+    "requirements": [
+      {
+        "id": "process-evidence",
+        "selector": [
+          {
+            "path": [
+              "channel"
+            ],
+            "equals": "Microsoft-Windows-Sysmon/Operational"
+          },
+          {
+            "path": [
+              "provider"
+            ],
+            "equals": "Microsoft-Windows-Sysmon"
+          },
+          {
+            "path": [
+              "event_id"
+            ],
+            "equals": "1"
+          }
+        ],
+        "min_count": 1,
+        "required_fields": [
+          [
+            "computer"
+          ],
+          [
+            "system_time"
+          ],
+          [
+            "data_fields",
+            "Image"
+          ],
+          [
+            "data_fields",
+            "CommandLine"
+          ]
+        ]
+      }
+    ]
+  }
+}

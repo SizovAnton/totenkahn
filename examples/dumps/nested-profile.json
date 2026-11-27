@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "nested-demo-v1",
+  "time_format": "iso8601",
+  "mappings": {
+    "timestamp": ["event", "created"],
+    "host": ["device", "name"],
+    "event_id": ["event", "code"],
+    "command_line": ["process", "command_line"]
+  }
+}

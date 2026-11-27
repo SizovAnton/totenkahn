@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "suite_id": "ci-smoke",
+  "description": "Synthetic positive and negative evidence; no live claim.",
+  "cases": [
+    {
+      "test_case": "../regression/positive.json",
+      "session": "../regression/session"
+    },
+    {
+      "test_case": "../regression/negative.json",
+      "session": "../regression/session"
+    }
+  ]
+}

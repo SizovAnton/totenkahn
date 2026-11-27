@@ -1,0 +1,4 @@
+timestamp	host	event_id	command_line	Score	Address
+2026-11-20T10:00:00Z	fixture-host	demo	example.exe --review	10.5	192.0.2.7
+2026-11-20T10:01:00Z	fixture-host	demo	other.exe	4	198.51.100.7
+2026-11-20T10:02:00Z	fixture-host	demo	unknown.exe	invalid	192.0.2.7

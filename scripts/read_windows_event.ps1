@@ -1,7 +1,7 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
-    [string]$LogName
+[Parameter(Mandatory = $true)]
+[ValidateNotNullOrEmpty()]
+[string]$LogName
 )
 
 try {
@@ -9,12 +9,14 @@ try {
 
     $xml = $event.ToXml()
     Write-Output $xml
+
 }
 catch {
     [Console]::Error.WriteLine(
-        "Failed to read event log '{0}': {1}",
-        $LogName,
-        $_.Exception.Message
+    "Failed to read event log '{0}': {1}",
+    $LogName,
+    $_.Exception.Message
     )
     exit 1
+
 }

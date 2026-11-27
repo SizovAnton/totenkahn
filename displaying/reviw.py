@@ -1,33 +1,34 @@
-"""Представлення результатів перевірки у таблицях Rich."""
-
+from reporting.explanation import explain_evaluation, terminal_explanation
 from rich.console import Group
 from rich.table import Table
 from rich.text import Text
-
 from displaying.table import add_checks_rows, format_check_details
 
-def explain_field_check(check):
-    if check["Matched"] is True:
-        status = "MATCH"
-    elif check["Field Present"] is False:
-        status = "FIELD MISSING"
-    else:
-        status = "NO MATCH"
 
-    return {
-        **check,
-        "Status" : status
-    }
+def explain_field_check(check):
+    if check.get("Matched") is True:
+        status = "MATCH"
+    elif check.get("Field Present") is False:
+        status = "FIELD MISSING"
+    elif check.get("Matched") is False:
+        status = "NO MATCH"
+    else:
+        status = "NOT RECORDED"
+
+    return {**check, "Status": status}
+
 
 def build_checks_explanation(checks):
     explanation = {}
 
     for block_name, field_checks in checks.items():
         explanation[block_name] = {}
+
         for check_name, check in field_checks.items():
             explanation[block_name][check_name] = explain_field_check(check)
 
     return explanation
+
 
 def find_check_pattern(patterns, pattern_reference):
     for pattern in patterns:
@@ -36,8 +37,10 @@ def find_check_pattern(patterns, pattern_reference):
 
     raise ValueError(f"Pattern not found: {pattern_reference}")
 
-def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern_reference=None):
+
+def build_event_review_view(rule, pattern_limit=10, full_detail=False, pattern_reference=None):
     sections = []
+    explanations = []
     visible_group_reference = set()
     all_patterns = rule["Check Summary"]
 
@@ -50,21 +53,16 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
         visible_patterns = all_patterns[:pattern_limit]
 
     show_all_groups = full_detail or pattern_reference is not None
-
-
-
     summary_table = Table(title="Evidence Group", show_lines=True)
     summary_table.add_column("Group")
     summary_table.add_column("Result")
     summary_table.add_column("Events")
     summary_table.add_column("Time UTC")
     summary_table.add_column("Reason")
-
     table = Table(title="Evidence", show_lines=True)
     table.add_column("Group")
     table.add_column("Check")
     table.add_column("Details")
-
     pattern_table = Table(title="Check Summary", show_lines=True)
     pattern_table.add_column("Pattern")
     pattern_table.add_column("Result")
@@ -89,17 +87,12 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
         else:
             shown_references = item["Example Groups"]
 
-        shown_labels = ", ".join(
-            reference.rsplit("-", 1)[-1]
-            for reference in shown_references
-        )
+        shown_labels = ", ".join((reference.rsplit("-", 1)[-1] for reference in shown_references))
 
         if show_all_groups:
             remaining_groups = 0
         else:
-            remaining_groups = (
-                item["Group Count"] - len(shown_references)
-            )
+            remaining_groups = item["Group Count"] - len(shown_references)
 
         pattern_table.add_row(
             item["Pattern Reference"],
@@ -108,7 +101,7 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
             str(item["Count"]),
             str(item["Group Count"]),
             shown_labels,
-            str(remaining_groups)
+            str(remaining_groups),
         )
 
     for item in visible_patterns:
@@ -124,44 +117,53 @@ def build_event_review_view(rule, pattern_limit=10, full_detail = False, pattern
 
             group_label = group["Group Reference"].rsplit("-", 1)[-1]
             evidence = group["Evidence"]
-            raw_checks = evidence["Checks"]
+            raw_checks = evidence.get("Checks") or {}
             time_details = format_check_details(group["Time Summary"])
-
-            summary_table.add_row(Text(group_label), Text(category), Text(str(group["Count"])), Text(time_details), Text(str(evidence["Selection Reason"])))
+            summary_table.add_row(
+                Text(group_label),
+                Text(category),
+                Text(str(group["Count"])),
+                Text(time_details),
+                Text(explain_evaluation(evidence)["summary"]),
+            )
+            references = ", ".join(
+                (str(r.get("Log Record ID", "unknown")) for r in group.get("References", [])[:5]),
+            )
+            more = (
+                " (more event references in HTML)" if len(group.get("References", [])) > 5 else ""
+            )
+            explanations.append(
+                terminal_explanation(evidence, f"Group {group_label} — events: {references}{more}"),
+            )
 
             if raw_checks:
-
                 checks = build_checks_explanation(raw_checks)
                 add_checks_rows(table, checks, group_label)
-
             else:
-                source_checks = evidence["Logsource"]["Checks"]
+                source_checks = (evidence.get("Logsource") or {}).get("Checks") or {}
 
                 if source_checks:
-                    add_checks_rows(table, {
-                        "logsource" : source_checks
-                    }, group_label)
+                    add_checks_rows(table, {"logsource": source_checks}, group_label)
 
     sections.append(pattern_table)
-
-    hidden_patterns = [
-        item for item in all_patterns
-        if item not in visible_patterns
-    ]
+    hidden_patterns = [item for item in all_patterns if item not in visible_patterns]
 
     if hidden_patterns:
-        hidden_events = sum(item["Count"] for item in hidden_patterns)
-        sections.append(Text(
-            f"Additional patterns not shown: {len(hidden_patterns)}; "
-            f"events in those patterns: {hidden_events}. "
-            "Full details are retained in report data."
-        ))
+        hidden_events = sum((item["Count"] for item in hidden_patterns))
+        sections.append(
+            Text(
+                f"Additional patterns not shown: {len(hidden_patterns)}; events in those patterns: {hidden_events}. Full details are retained in report data.",
+            ),
+        )
+
     sections.append(Text(""))
     sections.append(summary_table)
     sections.append(Text(""))
     sections.append(table)
+    sections.extend(explanations)
 
     return Group(*sections)
+
 
 def format_pattern_checks(pattern):
     rows = []
@@ -169,7 +171,6 @@ def format_pattern_checks(pattern):
     for block, result in pattern["Checks"].items():
         for name, detail in result.items():
             status = explain_field_check(detail)["Status"]
-
             rows.append(f"{block}.{name}: {status}")
 
     for check_name, source_detail in pattern["Logsource"]["Checks"].items():
@@ -182,9 +183,9 @@ def format_pattern_checks(pattern):
 
     return "\n".join(rows)
 
+
 def build_atomic_runs_view(report, show_correlation=False):
     table = Table(title="Atomic Runs — rule results among candidate events", show_lines=True)
-
     table.add_column("Run")
     table.add_column("Test")
     table.add_column("Time UTC")
@@ -195,12 +196,8 @@ def build_atomic_runs_view(report, show_correlation=False):
     table.add_column("Unmatch")
     table.add_column("Skipped")
     table.add_column("Issues")
-
     root_notes = []
-
-    limitation_labels ={
-        "pid_reuse_not_excluded": "PID reuse has not been ruled out."
-    }
+    limitation_labels = {"pid_reuse_not_excluded": "PID reuse has not been ruled out."}
 
     for run in report["Atomic Runs"]:
         atomic = run["Atomic Run"]
@@ -210,25 +207,19 @@ def build_atomic_runs_view(report, show_correlation=False):
         for root in root_evidence:
             for limitation in root.get("limitations", []):
                 description = limitation_labels.get(limitation, limitation)
-
-                root_notes.append(Text(
-                    f"Run {run['Run Reference']} — "
-                    f"root event {root['record_id']} "
-                    f"({root['method']}): {description}"
-                ))
+                root_notes.append(
+                    Text(
+                        f"Run {run['Run Reference']} — root event {root['record_id']} ({root['method']}): {description}",
+                    ),
+                )
 
         evidence = run.get("Process Correlation Evidence")
 
         if evidence is None:
             links_test = "Not recorded"
         else:
-            guid_count = sum(
-                1 for link in evidence if link["method"] == "process_guid"
-            )
-            pid_count = sum(
-                1 for link in evidence if link["method"] == "process_pid"
-            )
-
+            guid_count = sum((1 for link in evidence if link["method"] == "process_guid"))
+            pid_count = sum((1 for link in evidence if link["method"] == "process_pid"))
             links_test = f"GUID: {guid_count}\nPID: {pid_count}"
 
         table.add_row(
@@ -241,8 +232,9 @@ def build_atomic_runs_view(report, show_correlation=False):
             str(summary["Match"]),
             str(summary["Unmatch"]),
             str(summary["Skipped"]),
-            str(len(run["Correlation Issues"]))
+            str(len(run["Correlation Issues"])),
         )
+
     if show_correlation:
         return Group(table, *root_notes)
 

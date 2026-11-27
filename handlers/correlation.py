@@ -1,9 +1,5 @@
-"""Зіставлення запусків Atomic Red Team із подіями."""
-
-from logging import root
-from tabnanny import check
-
 from handlers.events import parse_event_time
+
 
 def link_atomic_runs(at_runs, events, correlation_config):
     results = []
@@ -13,23 +9,24 @@ def link_atomic_runs(at_runs, events, correlation_config):
         run_reference = f"R{number}"
         match = []
         correlation_issues = []
-
-        atomic_host = at_run["Hostname"].split('.', 1)[0].casefold()
+        atomic_host = at_run["Hostname"].split(".", 1)[0].casefold()
         sent_at = parse_event_time(at_run.get("Execution Time (UTC)"))
 
         if sent_at is None:
-            correlation_issues.append({
-                "Execution Time (UTC)" : at_run.get("Execution Time (UTC)"),
-                "Reason" : "Run time is missing, invalid, or has no timezone."
-            })
-
-            results.append({
-                "run_reference" : run_reference,
-                "atomic_run": at_run,
-                "candidate_events": match,
-                "correlation_issues": correlation_issues
-            })
-
+            correlation_issues.append(
+                {
+                    "Execution Time (UTC)": at_run.get("Execution Time (UTC)"),
+                    "Reason": "Run time is missing, invalid, or has no timezone.",
+                },
+            )
+            results.append(
+                {
+                    "run_reference": run_reference,
+                    "atomic_run": at_run,
+                    "candidate_events": match,
+                    "correlation_issues": correlation_issues,
+                },
+            )
             continue
 
         for data in events:
@@ -42,39 +39,37 @@ def link_atomic_runs(at_runs, events, correlation_config):
             received_at = parse_event_time(data.get("system_time"))
 
             if received_at is None:
-                correlation_issues.append({
-                    "Log Record ID" : data["record_id"],
-                    "Time Created" : data.get("system_time"),
-                    "Reason" : "Event time is missing, invalid, or has no timezone."
-                })
+                correlation_issues.append(
+                    {
+                        "Log Record ID": data["record_id"],
+                        "Time Created": data.get("system_time"),
+                        "Reason": "Event time is missing, invalid, or has no timezone.",
+                    },
+                )
                 continue
-
 
             delay = (received_at - sent_at).total_seconds()
 
             if 0 <= delay <= time_window:
                 match.append(data)
 
-        results.append({
-            "run_reference" : run_reference,
-            "atomic_run": at_run,
-            "candidate_events": match,
-            "correlation_issues" : correlation_issues
-        })
+        results.append(
+            {
+                "run_reference": run_reference,
+                "atomic_run": at_run,
+                "candidate_events": match,
+                "correlation_issues": correlation_issues,
+            },
+        )
+
     return results
 
-def get_items(linked_runs):
-    for run_result in linked_runs:
 
-        for event in run_result["candidate_events"]:
 
-            yield {**event,
-                   "run_reference" : run_result["run_reference"]}
 
 def find_root_candidates(at_run, events):
     candidates = []
     evidence = []
-
     prepared_hostname = at_run.get("Hostname")
 
     if not isinstance(prepared_hostname, str) or not prepared_hostname.strip():
@@ -103,10 +98,11 @@ def find_root_candidates(at_run, events):
         if not isinstance(profile, dict):
             raise ValueError("process_creation must be a dictionary")
 
-        if event["event_id"] != profile['event_id']:
+        if event["event_id"] != profile["event_id"]:
             continue
 
         prepared_computer = event.get("computer")
+
         if not isinstance(prepared_computer, str) or not prepared_computer.strip():
             continue
 
@@ -138,38 +134,35 @@ def find_root_candidates(at_run, events):
 
         if event_pid == process_id:
             candidates.append(event)
-
-            evidence.append({
-                "record_id": event["record_id"],
-                "method": "host_pid",
-                "checks": {
-                    "computer" :{
-                        "run_value": hostname,
-                        "event_value": computer,
+            evidence.append(
+                {
+                    "record_id": event["record_id"],
+                    "method": "host_pid",
+                    "checks": {
+                        "computer": {"run_value": hostname, "event_value": computer},
+                        "pid": {
+                            "run_value": process_id,
+                            "event_value": event_pid,
+                            "event_field": field_name,
+                            "event_base": pid_base,
+                        },
                     },
-                    "pid": {
-                        "run_value": process_id,
-                        "event_value": event_pid,
-                        "event_field": field_name,
-                        "event_base": pid_base,
-                    },
+                    "limitations": ["pid_reuse_not_excluded"],
                 },
-                "limitations": ["pid_reuse_not_excluded"]
-            })
+            )
 
-    return candidates, evidence
+    return (candidates, evidence)
+
 
 def find_child_candidates(parent_event, events):
     candidates = []
     evidence = []
-
     raw_computer = parent_event.get("computer")
 
     if not isinstance(raw_computer, str) or not raw_computer.strip():
         raise ValueError("Parent event computer must be a non-empty string")
 
     computer = raw_computer.strip().split(".", 1)[0].casefold()
-
     parent_time = parse_event_time(parent_event.get("system_time"))
 
     if parent_time is None:
@@ -181,10 +174,12 @@ def find_child_candidates(parent_event, events):
         raise ValueError("Parent event source must be a dictionary")
 
     profile = source.get("process_creation")
+
     if not isinstance(profile, dict):
         raise ValueError("Parent event process_creation must be a dictionary")
 
     data_fields = parent_event.get("data_fields")
+
     if not isinstance(data_fields, dict):
         raise ValueError("Parent event data_fields must be a dictionary")
 
@@ -255,6 +250,7 @@ def find_child_candidates(parent_event, events):
             continue
 
         raw_event_computer = event.get("computer")
+
         if not isinstance(raw_event_computer, str) or not raw_event_computer.strip():
             continue
 
@@ -269,17 +265,13 @@ def find_child_candidates(parent_event, events):
             continue
 
         common_checks = {
-            "computer": {
-                "parent_value": computer,
-                "child_value": event_computer,
-            },
+            "computer": {"parent_value": computer, "child_value": event_computer},
             "time": {
                 "parent_value": parent_time.isoformat(),
                 "child_value": event_time.isoformat(),
-                "condition": "child_time >= parent_time"
-            }
+                "condition": "child_time >= parent_time",
+            },
         }
-
         event_fields = event.get("data_fields")
 
         if not isinstance(event_fields, dict):
@@ -290,7 +282,9 @@ def find_child_candidates(parent_event, events):
 
         if parent_guid_field is not None:
             if not isinstance(parent_guid_field, str) or not parent_guid_field.strip():
-                raise ValueError("process_creation.parent_guid_field must be a non-empty string or null")
+                raise ValueError(
+                    "process_creation.parent_guid_field must be a non-empty string or null"
+                )
 
             raw_parent_guid = event_fields.get(parent_guid_field)
 
@@ -300,21 +294,22 @@ def find_child_candidates(parent_event, events):
         if process_guid is not None and event_parent_guid is not None:
             if process_guid == event_parent_guid:
                 candidates.append(event)
-
-                evidence.append({
-                    "parent_record_id": parent_event["record_id"],
-                    "child_record_id": event["record_id"],
-                    "method": "process_guid",
-                    "checks": {
-                        **common_checks,
-                        "guid": {
-                            "parent_value": process_guid,
-                            "parent_field": guid_field,
-                            "child_parent_value": event_parent_guid,
-                            "child_parent_field": parent_guid_field,
+                evidence.append(
+                    {
+                        "parent_record_id": parent_event["record_id"],
+                        "child_record_id": event["record_id"],
+                        "method": "process_guid",
+                        "checks": {
+                            **common_checks,
+                            "guid": {
+                                "parent_value": process_guid,
+                                "parent_field": guid_field,
+                                "child_parent_value": event_parent_guid,
+                                "child_parent_field": parent_guid_field,
+                            },
                         },
                     },
-                })
+                )
 
             continue
 
@@ -340,29 +335,29 @@ def find_child_candidates(parent_event, events):
 
         if event_parent_pid == process_pid:
             candidates.append(event)
-
-            evidence.append({
-                "parent_record_id": parent_event["record_id"],
-                "child_record_id": event["record_id"],
-                "method": "process_pid",
-                "fallback_reason": "guid_pair_unavailable",
-                "checks": {
-                    **common_checks,
-                    "pid": {
-                        "parent_value": process_pid,
-                        "parent_field": pid_field_name,
-                        "parent_base": pid_base,
-
-                        "child_parent_value": event_parent_pid,
-                        "child_parent_field": parent_pid_field_name,
-                        "child_parent_base": parent_pid_base,
+            evidence.append(
+                {
+                    "parent_record_id": parent_event["record_id"],
+                    "child_record_id": event["record_id"],
+                    "method": "process_pid",
+                    "fallback_reason": "guid_pair_unavailable",
+                    "checks": {
+                        **common_checks,
+                        "pid": {
+                            "parent_value": process_pid,
+                            "parent_field": pid_field_name,
+                            "parent_base": pid_base,
+                            "child_parent_value": event_parent_pid,
+                            "child_parent_field": parent_pid_field_name,
+                            "child_parent_base": parent_pid_base,
+                        },
                     },
+                    "limitations": ["pid_reuse_not_excluded"],
                 },
+            )
 
-                "limitations": ["pid_reuse_not_excluded"],
-            })
+    return (candidates, evidence)
 
-    return candidates, evidence
 
 def collect_process_candidates(root_event, events):
     root_record_id = root_event.get("record_id")
@@ -378,7 +373,6 @@ def collect_process_candidates(root_event, events):
     while pending:
         current = pending.pop()
         result.append(current)
-
         children, child_evidence = find_child_candidates(current, events)
         process_evidence.extend(child_evidence)
 
@@ -394,11 +388,11 @@ def collect_process_candidates(root_event, events):
             seen.add(child_record_id)
             pending.append(child)
 
-    return result, process_evidence
+    return (result, process_evidence)
+
 
 def correlate_processes(at_run, events):
     root_candidates, root_evidence = find_root_candidates(at_run, events)
-
     process_candidates = []
     process_evidence = []
 
@@ -406,8 +400,7 @@ def correlate_processes(at_run, events):
         correlation_status = "root_not_found"
     elif len(root_candidates) == 1:
         process_candidates, process_evidence = collect_process_candidates(
-            root_candidates[0],
-            events
+            root_candidates[0], events
         )
         correlation_status = "candidates_collected"
     else:

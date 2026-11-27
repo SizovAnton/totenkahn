@@ -1,0 +1,14 @@
+{
+  "title": "Synthetic baseline rule",
+  "id": "synthetic-baseline",
+  "logsource": {
+    "product": "windows",
+    "service": "totenkahn-demo"
+  },
+  "detection": {
+    "selection": {
+      "marker": "legacy"
+    },
+    "condition": "selection"
+  }
+}

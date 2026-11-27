@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "hypothesis": "Review process events containing both a PowerShell executable name and an encoded-command option; this is a triage lead, not a maliciousness verdict",
+  "scope": {"field": "/event_id", "op": "in", "value": ["1", 1, "4688", 4688]},
+  "condition": {
+    "all": [
+      {"any": [
+        {"field": "/command_line", "op": "contains", "value": "powershell", "case_sensitive": false},
+        {"field": "/command_line", "op": "contains", "value": "pwsh", "case_sensitive": false}
+      ]},
+      {"any": [
+        {"field": "/command_line", "op": "contains", "value": "-enc ", "case_sensitive": false},
+        {"field": "/command_line", "op": "contains", "value": "-encodedcommand ", "case_sensitive": false}
+      ]}
+    ]
+  }
+}

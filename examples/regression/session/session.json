@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "session_id": "synthetic-regression-demo",
+  "mode": "manual",
+  "producer": {
+    "normalizer_version": 1
+  },
+  "collection": {
+    "status": "completed"
+  },
+  "profiles_snapshot": {
+    "defaults": {
+      "windows_event_log": {
+        "product": "windows",
+        "service": null
+      }
+    },
+    "sources": [
+      {
+        "channel": "TOTENKAHN-Demo/Operational",
+        "provider": "TOTENKAHN-Demo",
+        "description": "Synthetic regression example",
+        "product": "windows",
+        "service": "totenkahn-demo"
+      }
+    ]
+  },
+  "origin": "synthetic_example"
+}

@@ -1,8 +1,6 @@
 def prepare_condition(detection, parser, collector):
-
     tree = parser(detection["condition"])
     references = collector(tree)
-
     available = set(detection) - {"condition"}
     missing = references - available
 
@@ -11,6 +9,7 @@ def prepare_condition(detection, parser, collector):
 
     return tree
 
+
 def evaluate_condition(node, block_results):
     node_type = node["type"]
 
@@ -18,8 +17,8 @@ def evaluate_condition(node, block_results):
         return block_results[node["name"]]
 
     if node_type == "not":
-        operand_results = evaluate_condition(node["operand"],
-                                              block_results)
+        operand_results = evaluate_condition(node["operand"], block_results)
+
         return not operand_results
 
     if node_type in ("and", "or"):

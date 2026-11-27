@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "gates": {
+    "max_regressed": 0,
+    "max_not_met": 0,
+    "max_insufficient": 0,
+    "min_cases": 2
+  },
+  "jobs": [
+    {
+      "id": "synthetic-smoke",
+      "suite": "suite.json",
+      "baseline": "../regression/baseline.yaml",
+      "candidate": "candidate.yaml"
+    }
+  ]
+}
