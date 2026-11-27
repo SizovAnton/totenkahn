@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "session_id": "versioned-process-controls",
+  "mode": "manual",
+  "producer": {
+    "normalizer_version": 1
+  },
+  "collection": {
+    "status": "completed"
+  },
+  "profiles_snapshot": {
+    "defaults": {
+      "windows_event_log": {
+        "product": "windows",
+        "service": null
+      }
+    },
+    "sources": [
+      {
+        "channel": "Synthetic",
+        "provider": "Synthetic",
+        "product": "windows",
+        "service": null,
+        "event_categories": {
+          "demo": "process_creation"
+        }
+      }
+    ]
+  },
+  "origin": "synthetic_example"
+}

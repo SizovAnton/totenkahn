@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "reviewed-elastic-process-start",
+  "logsource": {
+    "product": "windows",
+    "category": "process_creation"
+  },
+  "fields": {
+    "CommandLine": "/command_line"
+  }
+}

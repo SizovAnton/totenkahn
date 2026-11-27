@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "suite_id": "versioned-process-controls",
+  "description": "Synthetic calibration controls, not real EDR evidence",
+  "cases": [
+    {
+      "test_case": "positive.json",
+      "session": "session"
+    },
+    {
+      "test_case": "negative.json",
+      "session": "session"
+    }
+  ]
+}

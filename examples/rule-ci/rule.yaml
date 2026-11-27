@@ -1,0 +1,11 @@
+title: Controlled positive process marker
+id: b521e8fb-25a0-45ca-a594-d48595824f92
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains: TOTENKAHN_LIVE_
+  positive:
+    CommandLine|contains: _POSITIVE
+  condition: selection and positive

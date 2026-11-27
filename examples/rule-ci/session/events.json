@@ -1,0 +1,44 @@
+[
+  {
+    "record_id": "positive",
+    "event_id": "demo",
+    "computer": "synthetic-host",
+    "system_time": "2026-11-27T00:00:00Z",
+    "channel": "Synthetic",
+    "provider": "Synthetic",
+    "source": {
+      "channel": "Synthetic",
+      "provider": "Synthetic",
+      "product": "windows",
+      "service": null,
+      "event_categories": {
+        "demo": "process_creation"
+      },
+      "category": "process_creation"
+    },
+    "data_fields": {
+      "CommandLine": "cmd.exe /d /c echo TOTENKAHN_LIVE_00000000000000000000000000000000_POSITIVE"
+    }
+  },
+  {
+    "record_id": "negative",
+    "event_id": "demo",
+    "computer": "synthetic-host",
+    "system_time": "2026-11-27T00:00:00Z",
+    "channel": "Synthetic",
+    "provider": "Synthetic",
+    "source": {
+      "channel": "Synthetic",
+      "provider": "Synthetic",
+      "product": "windows",
+      "service": null,
+      "event_categories": {
+        "demo": "process_creation"
+      },
+      "category": "process_creation"
+    },
+    "data_fields": {
+      "CommandLine": "cmd.exe /d /c echo TOTENKAHN_LIVE_00000000000000000000000000000000_NEGATIVE"
+    }
+  }
+]

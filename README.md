@@ -2506,3 +2506,10 @@ CLI JSON є підсумком із посиланнями, а не обов’�
 Відкрийте повернений шлях `html` або `report` безпосередньо. `reports --open` відкриває тільки стандартний каталог і не реєструє всі зовнішні результати.
 
 **Що перевірити:** фактичні шляхи артефактів, контекст запуску й наявність пов’язаних файлів. Для незалежної повторної перевірки зберігайте також відповідні докази; сам HTML їх не замінює.
+
+
+## CI: versioned rule changes and live evidence contracts
+
+`totenkahn ci revisions --repo REPOSITORY --baseline FULL_SHA --candidate FULL_SHA --output-dir NEW_DIRECTORY` evaluates rule data from two immutable Git revisions against the baseline's reviewed suite. Git is required for this development command. Candidate code and candidate changes to expectations are not executed. Missing fields and unknown source identity are reported as verification needed, not confirmed negative detections.
+
+The complete setup and acceptance instructions are in [examples/rule-ci/README.md](examples/rule-ci/README.md). Templates in `examples/ci-workflows/` separate hosted PR validation from manually authorized live Elastic checks on the lab runner. Activate these templates after the infrastructure baseline is merged. Existing source CI includes the new isolated revision and Elastic-validator tests. Preparing templates does not run GitHub jobs or endpoint actions.

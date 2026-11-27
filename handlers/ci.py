@@ -258,6 +258,11 @@ def dispatch(arguments):
     if not arguments or arguments[0] != "ci":
         return None
 
+    if len(arguments) > 1 and arguments[1] == "revisions":
+        from handlers.git_rule_ci import main as revision_main
+
+        return revision_main(arguments[2:])
+
     parser = HelpfulParser(
         prog="totenkahn ci",
         description="Noninteractive saved-evidence CI. Never prepares dependencies or runs Atomic.",

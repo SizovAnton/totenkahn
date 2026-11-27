@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "case_id": "positive",
+  "session_id": "versioned-process-controls",
+  "description": "Reviewed synthetic positive control",
+  "evidence": {
+    "method": "manual_record_ids",
+    "reason": "Explicit fixture membership",
+    "record_ids": [
+      "positive"
+    ]
+  },
+  "expectation": {
+    "scope": "selected_events",
+    "expected_rule_match": true
+  },
+  "telemetry": {
+    "scope": "selected_events",
+    "requirements": [
+      {
+        "id": "process-fields",
+        "selector": [],
+        "min_count": 1,
+        "required_fields": [
+          [
+            "data_fields",
+            "CommandLine"
+          ]
+        ]
+      }
+    ]
+  }
+}

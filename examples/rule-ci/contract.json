@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "rule": "rule.yaml",
+  "suite": "suite.json",
+  "mapping": "mapping.json",
+  "gates": {
+    "max_regressed": 0,
+    "max_not_met": 0,
+    "max_insufficient": 0,
+    "min_cases": 2
+  }
+}
