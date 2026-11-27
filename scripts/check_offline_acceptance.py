@@ -108,7 +108,7 @@ class OfflineAcceptanceTests(unittest.TestCase):
         for path in a.iterdir():
             self.assertEqual(path.read_bytes(), (b / path.name).read_bytes())
 
-        events = [json.loads(line) for line in (a / "events.jsonl").read_text().splitlines()]
+        events = [json.loads(line) for line in (a / "events.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(events), 3)
         self.assertNotIn("command_line", events[2])
 
@@ -128,7 +128,7 @@ class OfflineAcceptanceTests(unittest.TestCase):
 
         runner.stage_import = failure
         runner.run()
-        html = (runner.output / "index.html").read_text()
+        html = (runner.output / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
 
@@ -162,7 +162,7 @@ class OfflineAcceptanceTests(unittest.TestCase):
         self.fake_stages(runner)
         report = runner.run()
         self.assertEqual(sum(len(s["checks"]) for s in report["stages"]), 20)
-        html = (runner.output / "index.html").read_text()
+        html = (runner.output / "index.html").read_text(encoding="utf-8")
         self.assertEqual(html.count("Requirement → scenario → result → evidence"), 5)
         self.assertIn("not full Sigma certification", html)
         self.assertIn("Unselected stages are not tested", html)
@@ -237,7 +237,7 @@ class OfflineAcceptanceTests(unittest.TestCase):
 
         for page in runner.output.rglob("*.html"):
             parser = Links()
-            parser.feed(page.read_text())
+            parser.feed(page.read_text(encoding="utf-8"))
 
             for target in parser.links:
                 if not target.startswith("#"):

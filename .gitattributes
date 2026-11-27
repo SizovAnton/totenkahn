@@ -1,0 +1,2 @@
+# Preserve the exact bytes of the fixture verified against the upstream SHA-256.
+/scripts/fixtures/atomic-T1033.yaml text eol=lf
