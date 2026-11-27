@@ -10,7 +10,7 @@ SCENARIOS = {
     "case": 'case create --name investigation --title "Server investigation"\n  case add investigation --dataset DATASET\n  case timeline investigation',
     "hunt": "hunt define CASE --name hypothesis --author ENGINEER --spec hunt.json\n  hunt run CASE --name hypothesis",
     "finding": "finding list CASE\n  finding export CASE --name FINDING --baseline baseline.yaml --candidate candidate.yaml --output-dir NEW_DIRECTORY",
-    "ci": "ci --config pipeline.json --output-dir NEW_DIRECTORY",
+    "ci": "ci --config pipeline.json --output-dir NEW_DIRECTORY\n  ci revisions --repo REPOSITORY --baseline FULL_SHA --candidate FULL_SHA --output-dir NEW_DIRECTORY",
 }
 
 

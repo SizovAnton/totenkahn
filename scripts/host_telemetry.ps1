@@ -5,6 +5,7 @@ $ProgressPreference='SilentlyContinue'
 $allowedChannels=@('Security','Microsoft-Windows-Sysmon/Operational')
 $auditKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit'
 $auditValue='ProcessCreationIncludeCmdLine_Enabled'
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;

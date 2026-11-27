@@ -1,0 +1,50 @@
+name: Totenkahn - Versioned rule gate
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Full reviewed baseline commit SHA
+        required: true
+      candidate:
+        description: Full candidate commit SHA
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: rule-gate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rule-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASELINE: ${{ github.event.pull_request.base.sha || inputs.baseline }}
+      CANDIDATE: ${{ github.event.pull_request.head.sha || inputs.candidate }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha || inputs.baseline }}
+          path: engine
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.candidate }}
+          path: revisions
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install reviewed engine dependencies
+        run: python -m pip install PyYAML==6.0.3 rich==15.0.0
+      - name: Evaluate candidate data with baseline engine and expectations
+        run: python -B engine/scripts/run_rule_ci.py --repo revisions --baseline "$BASELINE" --candidate "$CANDIDATE" --output-dir rule-results
+      - name: Preserve reports and revision snapshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rule-revisions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rule-results/
+          if-no-files-found: warn
+          retention-days: 14

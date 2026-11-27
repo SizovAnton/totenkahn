@@ -19,6 +19,8 @@ from check_terminal import TerminalTests
 from check_source_depth import SourceDepthTests
 from check_input_values import InputValueTests
 from check_ci import CITests
+from check_rule_revisions import RuleRevisionTests
+from check_elastic_ci import ElasticCIContractTests
 from check_dependencies import DependencyTests
 from check_atomic_resources import ResourceTests
 from check_test_cli import TestWorkflowTests
@@ -327,6 +329,8 @@ def main():
                         OfflineAcceptanceTests,
                         OperationsTests,
                         CITests,
+                        RuleRevisionTests,
+                        ElasticCIContractTests,
                     )
                 ),
             )

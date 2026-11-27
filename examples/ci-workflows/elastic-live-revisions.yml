@@ -1,0 +1,584 @@
+name: Totenkahn - Versioned live Elastic acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Full reviewed baseline SHA in the Totenkahn source repository
+        required: true
+      candidate:
+        description: Full candidate SHA in the same repository
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: totenkahn-lab
+  cancel-in-progress: false
+
+jobs:
+  reviewed-rules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BASELINE: ${{ inputs.baseline }}
+      CANDIDATE: ${{ inputs.candidate }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.TOTENKAHN_RULE_REPOSITORY || 'SizovAnton/totenkahn' }}
+          ref: ${{ inputs.baseline }}
+          path: engine
+          persist-credentials: false
+          token: ${{ secrets.TOTENKAHN_RULES_READ_TOKEN || github.token }}
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.TOTENKAHN_RULE_REPOSITORY || 'SizovAnton/totenkahn' }}
+          ref: ${{ inputs.candidate }}
+          path: revisions
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.TOTENKAHN_RULES_READ_TOKEN || github.token }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Offline gate before any endpoint action
+        run: |
+          python -m pip install PyYAML==6.0.3 rich==15.0.0
+          python -B engine/scripts/run_rule_ci.py --repo revisions --baseline "$BASELINE" --candidate "$CANDIDATE" --output-dir rule-results
+          cp engine/scripts/elastic_ci_contract.ps1 rule-results/live-bundle/elastic_ci_contract.ps1
+      - name: Pin reviewed validator bytes
+        run: |
+          python - <<'PYCODE'
+          from pathlib import Path
+          import hashlib, json
+          root = Path('rule-results/live-bundle')
+          path = root / 'manifest.json'
+          data = json.loads(path.read_text())
+          data['files']['elastic_ci_contract.ps1'] = hashlib.sha256((root / 'elastic_ci_contract.ps1').read_bytes()).hexdigest()
+          path.write_text(json.dumps(data, indent=2), encoding='utf-8')
+          PYCODE
+      - uses: actions/upload-artifact@v7
+        with:
+          name: reviewed-live-rules
+          path: rule-results/live-bundle/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: offline-rule-gate
+          path: rule-results/
+          if-no-files-found: warn
+          retention-days: 7
+  acceptance:
+    needs: reviewed-rules
+    name: Versioned rules on live Elastic and five-stage acceptance
+    runs-on: [self-hosted, Windows, X64, totenkahn-lab]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+        working-directory: C:\TotenkahnServer\release-discover-ci
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: reviewed-live-rules
+          path: ${{ runner.temp }}/totenkahn-reviewed-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Prepare isolated live run
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "C:\TotenkahnServer\ci-runs\live-revisions-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          "TOTENKAHN_CI_ROOT=$root" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TOTENKAHN_HOME=$root\private-data" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          New-Item -ItemType Directory -Path "$root\inputs" | Out-Null
+          $reviewed = Join-Path $env:RUNNER_TEMP "totenkahn-reviewed-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $manifest = Get-Content -LiteralPath "$reviewed\manifest.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ($manifest.offline_gate -ne 'passed') { throw 'Offline rule gate did not pass.' }
+          $required = @('baseline.yaml','candidate.yaml','mapping.json','elastic_ci_contract.ps1')
+          if (@($manifest.files.PSObject.Properties).Count -ne $required.Count) { throw 'Unexpected bundle contents.' }
+          foreach ($name in $required) {
+              $expected = $manifest.files.$name
+              if ($expected -notmatch '^[a-f0-9]{64}$') { throw 'Invalid bundle hash.' }
+              if ((Get-FileHash -LiteralPath (Join-Path $reviewed $name) -Algorithm SHA256).Hash -ne $expected) { throw "Reviewed file hash mismatch: $name" }
+              Copy-Item -LiteralPath (Join-Path $reviewed $name) -Destination (Join-Path "$root\inputs" $name)
+          }
+          Copy-Item -LiteralPath "$reviewed\manifest.json" -Destination "$root\rule-revisions.json"
+          @'
+          $ErrorActionPreference = 'Stop'
+          $runRoot = $env:TOTENKAHN_CI_ROOT
+          $exe = 'C:\TotenkahnServer\release-discover-ci\totenkahn.exe'
+          $inputs = Join-Path $runRoot 'inputs'
+          
+          function Invoke-Totenkahn {
+              param([string]$Label, [string[]]$Arguments, [int]$ExpectedExit = 0)
+          
+              $stdout = Join-Path $runRoot ($Label + '.stdout.txt')
+              $stderr = Join-Path $runRoot ($Label + '.stderr.txt')
+              $previousPreference = $ErrorActionPreference
+          
+              try {
+                  $ErrorActionPreference = 'Continue'
+                  & $exe @Arguments 1> $stdout 2> $stderr
+                  $code = $LASTEXITCODE
+              }
+              finally {
+                  $ErrorActionPreference = $previousPreference
+              }
+          
+              if ($code -ne $ExpectedExit) {
+                  throw "$Label returned exit $code; expected $ExpectedExit. Inspect local logs in $runRoot"
+              }
+          
+              Write-Host "$Label : expected exit code received"
+          }
+          
+          function Read-Report {
+              param([string]$RelativePath)
+              Get-Content -LiteralPath (Join-Path $runRoot $RelativePath) -Raw -Encoding UTF8 | ConvertFrom-Json
+          }
+          
+          function Assert-Value {
+              param($Actual, $Expected, [string]$Label)
+              if ($null -eq $Actual -or $Actual -ne $Expected) {
+                  throw "Assertion failed: $Label. Inspect local reports in $runRoot"
+              }
+          }
+          
+          function Assert-Decisions {
+              param($Counts)
+              Assert-Value $Counts.match 1 'match count'
+              Assert-Value $Counts.no_match 1 'no_match count'
+              foreach ($item in $Counts.PSObject.Properties) {
+                  if ($item.Name -notin @('match', 'no_match') -and $item.Value -ne 0) {
+                      throw "Unexpected additional decision category. Inspect local report."
+                  }
+              }
+          }
+          
+          '@ | Set-Content -LiteralPath "$root\common.ps1" -Encoding UTF8
+          
+          $exe = 'C:\TotenkahnServer\release-discover-ci\totenkahn.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'New release executable is missing.' }
+          
+          $profileOutput = & $exe dump profiles --json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect executable profiles.' }
+          $profiles = ($profileOutput -join "`n") | ConvertFrom-Json
+          if ($null -eq $profiles.profiles.'elastic-discover-v1') { throw 'Missing elastic-discover-v1 profile.' }
+          Get-FileHash -LiteralPath $exe -Algorithm SHA256 | ConvertTo-Json | Set-Content "$root\executable-hash.json" -Encoding UTF8
+          Write-Host "Isolated live run: $root"
+
+      - name: Execute controlled actions and collect fresh Elastic events
+        env:
+          ELASTIC_URL: ${{ vars.ELASTIC_URL }}
+          ELASTIC_CONNECT_IP: ${{ vars.ELASTIC_CONNECT_IP }}
+          ELASTIC_PROCESS_INDEX: ${{ vars.ELASTIC_PROCESS_INDEX }}
+          ELASTIC_HOST_ID: ${{ vars.ELASTIC_HOST_ID }}
+          ELASTIC_API_KEY: ${{ secrets.ELASTIC_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . (Join-Path $env:TOTENKAHN_CI_ROOT 'inputs\elastic_ci_contract.ps1')
+          $curl = 'C:\TotenkahnServer\elastic-access\curl-portable\curl-8.23.0_10-win64-mingw\bin\curl.exe'
+          $ca = 'C:\TotenkahnServer\elastic-access\http_ca.crt'
+          foreach ($path in @($curl, $ca)) {
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                  throw "Required local file is missing: $path"
+              }
+          }
+          
+          foreach ($name in @('ELASTIC_URL', 'ELASTIC_CONNECT_IP', 'ELASTIC_PROCESS_INDEX', 'ELASTIC_HOST_ID', 'ELASTIC_API_KEY')) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+                  throw "Required setting is empty: $name"
+              }
+          }
+          
+          $base = [Uri]$env:ELASTIC_URL
+          if (-not $base.IsAbsoluteUri -or $base.Scheme -ne 'https' -or $base.UserInfo -or $base.Query -or $base.Fragment -or $base.AbsolutePath -ne '/') {
+              throw 'ELASTIC_URL must be an HTTPS origin without credentials, query or path.'
+          }
+          if ($env:ELASTIC_PROCESS_INDEX -ne 'logs-endpoint.events.process-*') {
+              throw 'Unexpected index pattern; review the configured access scope.'
+          }
+          
+          $script:ElasticKey = $env:ELASTIC_API_KEY.Trim()
+          if ($script:ElasticKey -notmatch '^[A-Za-z0-9+/]+={0,2}$') { throw 'Invalid encoded key format.' }
+          Remove-Item Env:ELASTIC_API_KEY
+          $runRoot = $env:TOTENKAHN_CI_ROOT
+          $inputs = Join-Path $runRoot 'inputs'
+          
+          function Invoke-ElasticSearch {
+              param([hashtable]$Query, [string]$Label)
+              $body = $Query | ConvertTo-Json -Depth 30
+              $uri = $env:ELASTIC_URL.TrimEnd('/') + '/' + $env:ELASTIC_PROCESS_INDEX + '/_search?allow_partial_search_results=false&allow_no_indices=false&ignore_unavailable=false'
+              $connectAddress = $null
+              if (-not [Net.IPAddress]::TryParse($env:ELASTIC_CONNECT_IP, [ref]$connectAddress) -or $connectAddress.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) {
+                  throw 'ELASTIC_CONNECT_IP must be a valid IPv4 address.'
+              }
+              if ($base.DnsSafeHost -ne 'es01' -or $base.Port -ne 9200) {
+                  throw 'Expected the reviewed HTTPS endpoint https://es01:9200.'
+              }
+              $apiKey = $script:ElasticKey
+              if ($apiKey -notmatch '^[A-Za-z0-9+/]+={0,2}$') {
+                  throw 'ELASTIC_API_KEY must contain only the encoded API key, without the ApiKey prefix.'
+              }
+              
+              $requestRoot = Join-Path (Join-Path $runRoot 'api') $Label
+              New-Item -ItemType Directory -Path $requestRoot | Out-Null
+              $requestPath = Join-Path $requestRoot 'request.json'
+              $responsePath = Join-Path $requestRoot 'response.json'
+              $errorPath = Join-Path $requestRoot 'curl.stderr.txt'
+              [IO.File]::WriteAllText($requestPath, $body, [Text.UTF8Encoding]::new($false))
+              $resolve = '{0}:{1}:{2}' -f $base.DnsSafeHost, $base.Port, $connectAddress.ToString()
+              
+              $curlArguments = @(
+                  '--disable', '--config', '-', '--silent', '--show-error',
+                  '--proto', '=https', '--noproxy', '*',
+                  '--cacert', $ca, '--resolve', $resolve,
+                  '--connect-timeout', '10', '--max-time', '30',
+                  '--request', 'POST', '--header', 'Content-Type: application/json',
+                  '--data-binary', ('@' + $requestPath),
+                  '--output', $responsePath, '--write-out', '%{http_code}',
+                  '--url', $uri
+              )
+              $curlConfig = 'header = "Authorization: ApiKey ' + $apiKey + '"'
+              
+              Write-Host "Persistent diagnostics: $requestRoot"
+              $process = [Diagnostics.Process]::new()
+              $process.StartInfo.FileName = $curl
+              $process.StartInfo.UseShellExecute = $false
+              $process.StartInfo.CreateNoWindow = $true
+              $process.StartInfo.RedirectStandardInput = $true
+              $process.StartInfo.RedirectStandardOutput = $true
+              $process.StartInfo.RedirectStandardError = $true
+              $process.StartInfo.Arguments = (($curlArguments | ForEach-Object {
+                  if ($_ -match '["\r\n]' -or $_.EndsWith('\')) {
+                      throw 'Unexpected character in a curl argument.'
+                  }
+                  '"' + $_ + '"'
+              }) -join ' ')
+              $previousInputEncoding = [Console]::InputEncoding
+              $started = $false
+              $timedOut = $false
+              
+              try {
+                  Write-Host 'Starting curl; process deadline is 45 seconds.'
+                  [Console]::InputEncoding = [Text.ASCIIEncoding]::new()
+                  if ($null -ne $process.StartInfo.PSObject.Properties['StandardInputEncoding']) {
+                      $process.StartInfo.StandardInputEncoding = [Text.ASCIIEncoding]::new()
+                  }
+                  $started = $process.Start()
+                  if (-not $started) { throw 'Could not start curl.' }
+                  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+                  $stderrTask = $process.StandardError.ReadToEndAsync()
+                  $configBytes = [Text.Encoding]::ASCII.GetBytes($curlConfig + "`n")
+                  $inputStream = $process.StandardInput.BaseStream
+                  $inputStream.Write($configBytes, 0, $configBytes.Length)
+                  $inputStream.Flush()
+                  $inputStream.Close()
+                  [Array]::Clear($configBytes, 0, $configBytes.Length)
+                  $configBytes = $null
+                  $curlConfig = $null
+                  Write-Host 'Configuration sent; standard input closed. Waiting for HTTPS response.'
+              
+                  if (-not $process.WaitForExit(45000)) {
+                      $timedOut = $true
+                      $process.Kill()
+                      if (-not $process.WaitForExit(5000)) {
+                          throw 'curl exceeded its deadline and did not finish after termination.'
+                      }
+                  }
+                  if (-not $stdoutTask.Wait(5000) -or -not $stderrTask.Wait(5000)) {
+                      throw 'Timed out while collecting curl diagnostics.'
+                  }
+                  $httpCode = $stdoutTask.Result.Trim()
+                  $curlExit = $process.ExitCode
+                  $diagnostic = $stderrTask.Result
+                  if ($diagnostic) {
+                      $diagnostic = $diagnostic.Replace($apiKey, '[REDACTED]')
+                      $diagnostic = $diagnostic -replace '(?im)Authorization[^\r\n]*', 'Authorization: [REDACTED]'
+                      foreach ($line in ($diagnostic -split '\r?\n' | Select-Object -First 20)) {
+                          Write-Host ('curl diagnostic: ' + $line)
+                      }
+                  }
+                  [IO.File]::WriteAllText($errorPath, $diagnostic, [Text.UTF8Encoding]::new($false))
+                  Write-Host "curl exit: $curlExit"
+                  if ($timedOut) { Stop-ElasticEvidence 'transport_timeout' 'curl exceeded the 45-second process deadline and was terminated.' }
+              }
+              finally {
+                  [Console]::InputEncoding = $previousInputEncoding
+                  $curlConfig = $null
+                  $apiKey = $null
+                  if ($started -and -not $process.HasExited) {
+                      $process.Kill()
+                      [void]$process.WaitForExit(5000)
+                  }
+                  $process.Dispose()
+              }
+              
+              $httpCode = ($httpCode -join '').Trim()
+              $body = if (Test-Path -LiteralPath $responsePath) { [IO.File]::ReadAllText($responsePath, [Text.Encoding]::UTF8) } else { '' }
+              return Read-ElasticSearchResponse $curlExit $httpCode $body
+          }
+          
+          
+          function Get-OneField {
+              param($Document, [string]$Name)
+              $values = @($Document.fields.$Name)
+              if ($values.Count -ne 1 -or $null -eq $values[0]) {
+                  throw "Expected a single value for field $Name. Inspect local API response."
+              }
+              return $values[0]
+          }
+          
+          function Start-MarkerProcess {
+              param([string]$Marker)
+              if ($Marker -notmatch '^TOTENKAHN_LIVE_[a-f0-9]{32}_(POSITIVE|NEGATIVE)$') {
+                  throw 'Unexpected marker format.'
+              }
+              $child = [Diagnostics.Process]::new()
+              $child.StartInfo.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+              $child.StartInfo.Arguments = '/d /c "echo ' + $Marker + '"'
+              $child.StartInfo.UseShellExecute = $false
+              $child.StartInfo.CreateNoWindow = $true
+              $child.StartInfo.RedirectStandardOutput = $true
+              $child.StartInfo.RedirectStandardError = $true
+              $started = $false
+              try {
+                  $startedAt = [DateTime]::UtcNow.ToString('o')
+                  $started = $child.Start()
+                  if (-not $started) { throw 'Could not start controlled cmd.exe.' }
+                  $pidValue = $child.Id
+                  $stdout = $child.StandardOutput.ReadToEndAsync()
+                  $stderr = $child.StandardError.ReadToEndAsync()
+                  if (-not $child.WaitForExit(10000)) { throw 'Controlled cmd.exe exceeded 10 seconds.' }
+                  if (-not $stdout.Wait(5000) -or -not $stderr.Wait(5000)) { throw 'Controlled process output timeout.' }
+                  if ($child.ExitCode -ne 0 -or $stdout.Result.Trim() -ne $Marker) {
+                      throw 'Controlled command did not produce the expected marker.'
+                  }
+                  return @{ marker=$Marker; pid=$pidValue; started_at=$startedAt; finished_at=[DateTime]::UtcNow.ToString('o'); exit_code=$child.ExitCode }
+              }
+              finally {
+                  if ($started -and -not $child.HasExited) { $child.Kill(); [void]$child.WaitForExit(5000) }
+                  $child.Dispose()
+              }
+          }
+          
+          try {
+              $hostFilter = @{ term = @{ 'host.id' = $env:ELASTIC_HOST_ID } }
+              $preflightQuery = @{
+                  size=1; track_total_hits=$true; _source=$false
+                  fields=@('host.name', 'host.os.type', 'host.id')
+                  sort=@(@{ '@timestamp'='desc' })
+                  query=@{ bool=@{ filter=@(
+                      $hostFilter
+                      @{ term=@{ 'event.category'='process' } }
+                      @{ term=@{ 'event.type'='start' } }
+                      @{ range=@{ '@timestamp'=@{ gte='now-7d'; lte='now' } } }
+                  ) } }
+              }
+              Write-Host 'Preflight: validating access and the configured endpoint identity.'
+              $preflight = Invoke-ElasticSearch $preflightQuery '000-preflight'
+              $existing = @($preflight.hits.hits)
+              if ($preflight.hits.total.value -lt 1 -or $existing.Count -ne 1) { throw 'No preflight host event available.' }
+              if ((Get-OneField $existing[0] 'host.name') -ine $env:COMPUTERNAME -or (Get-OneField $existing[0] 'host.os.type') -ne 'windows') {
+                  throw 'Configured Elastic host does not match this Windows runner. No endpoint actions were executed.'
+              }
+          
+              $prefix = 'TOTENKAHN_LIVE_' + [Guid]::NewGuid().ToString('N')
+              $windowStart = [DateTime]::UtcNow.AddSeconds(-30).ToString('o')
+              $positive = Start-MarkerProcess ($prefix + '_POSITIVE')
+              $positive | ConvertTo-Json | Set-Content "$runRoot\action-positive.json" -Encoding UTF8
+              $negative = Start-MarkerProcess ($prefix + '_NEGATIVE')
+              $negative | ConvertTo-Json | Set-Content "$runRoot\action-negative.json" -Encoding UTF8
+              $windowEnd = [DateTime]::UtcNow.AddSeconds(30).ToString('o')
+              Write-Host 'Two controlled cmd.exe actions completed. Waiting for Elastic process-start events.'
+          
+              $query = @{
+                  size=100; track_total_hits=$true; _source=$false; fields=@('*')
+                  sort=@(@{ '@timestamp'='asc' })
+                  query=@{ bool=@{ filter=@(
+                      $hostFilter
+                      @{ term=@{ 'event.category'='process' } }
+                      @{ term=@{ 'event.type'='start' } }
+                      @{ term=@{ 'process.name'='cmd.exe' } }
+                      @{ wildcard=@{ 'process.command_line'=@{ value=('*' + $prefix + '*') } } }
+                      @{ range=@{ '@timestamp'=@{ gte=$windowStart; lte=$windowEnd } } }
+                  ) } }
+              }
+              $watch = [Diagnostics.Stopwatch]::StartNew()
+              $attempt = 0
+              $complete = $false
+              do {
+                  $attempt++
+                  $label = '{0:D3}-poll' -f $attempt
+                  $response = Invoke-ElasticSearch $query $label
+                  $hits = @($response.hits.hits)
+                  if ($response.hits.total.value -ne $hits.Count) { throw 'Response is truncated; event selection rejected.' }
+                  if ($hits.Count -gt 2) { throw 'Unexpected extra or duplicate events; refusing to silently discard evidence.' }
+                  Write-Host "Telemetry poll $attempt : $($hits.Count)/2 events; elapsed $([int]$watch.Elapsed.TotalSeconds)s."
+                  if ($hits.Count -eq 2) { $complete=$true; break }
+                  if ($watch.Elapsed.TotalSeconds -ge 180) { break }
+                  Start-Sleep -Seconds 5
+              } while ($watch.Elapsed.TotalSeconds -lt 180)
+              if (-not $complete) { Stop-ElasticEvidence 'missing_events' 'Telemetry timeout: both new events were not obtained. Detection is not evaluated.' }
+          
+              $selected = Select-ElasticEvidence $response @($negative, $positive) $env:ELASTIC_HOST_ID $windowStart $windowEnd
+              $ordered = @($selected.documents)
+              $references = @($selected.references)
+
+              $utf8 = [Text.UTF8Encoding]::new($false)
+              [IO.File]::WriteAllText("$inputs\elastic-response.json", (ConvertTo-Json -InputObject $ordered -Depth 100), $utf8)
+              $rule = "title: Deliberately regressed control`nlogsource:`n  product: windows`n  category: process_creation`ndetection:`n  selection:`n    CommandLine|contains: '$($prefix)_NEVER_EXECUTED'`n  condition: selection`n"
+              [IO.File]::WriteAllText("$inputs\regressed.yaml", $rule, $utf8)
+              $finalResponsePath = Join-Path (Join-Path (Join-Path $runRoot 'api') $label) 'response.json'
+              $provenance = @{
+                  schema_version=1; status='passed'; scope='two_controlled_new_endpoint_process_events'
+                  rule_revisions=(Get-Content -LiteralPath "$runRoot\rule-revisions.json" -Raw -Encoding UTF8 | ConvertFrom-Json)
+                  run_id=$env:GITHUB_RUN_ID; run_attempt=$env:GITHUB_RUN_ATTEMPT
+                  workflow_commit=$env:GITHUB_SHA; host_id=$env:ELASTIC_HOST_ID
+                  execution_window=@{start=$windowStart;end=$windowEnd}; actions=@($positive,$negative)
+                  poll_count=$attempt; wait_seconds=$watch.Elapsed.TotalSeconds
+                  response_file=('api/' + $label + '/response.json')
+                  response_sha256=(Get-FileHash -LiteralPath $finalResponsePath -Algorithm SHA256).Hash
+                  imported_file='inputs/elastic-response.json'
+                  imported_sha256=(Get-FileHash -LiteralPath "$inputs\elastic-response.json" -Algorithm SHA256).Hash
+                  transformation='Extract hits.hits unchanged as JSON documents with fields; order negative then positive by unique marker. Original API envelope retained.'
+                  records=$references
+                  limitations=@('Not an EDR alert test.','Two process-start events only; not full host coverage.','API envelope is extracted by workflow; executable consumes fields documents.')
+              }
+              $provenance | ConvertTo-Json -Depth 16 | Set-Content "$runRoot\live-provenance.json" -Encoding UTF8
+              Get-ChildItem -LiteralPath $inputs -File | Get-FileHash -Algorithm SHA256 | ConvertTo-Json | Set-Content "$runRoot\input-hashes.json" -Encoding UTF8
+              Get-FileHash -LiteralPath $curl,$ca -Algorithm SHA256 | ConvertTo-Json | Set-Content "$runRoot\transport-hashes.json" -Encoding UTF8
+              Write-Host 'PASS: two fresh events validated against host, marker, PID and execution time.'
+          }
+          catch {
+              $category = $_.Exception.Data['category']
+              if ([string]::IsNullOrWhiteSpace($category)) { $category = 'execution_error' }
+              @{schema_version=1;status='needs_verification';category=$category;detection='not_evaluated';reason='Acquisition did not satisfy the reviewed evidence contract. Inspect local diagnostics.'} | ConvertTo-Json | Set-Content "$runRoot\acquisition-failure.json" -Encoding UTF8
+              throw
+          }
+          finally {
+              $script:ElasticKey = $null
+              Remove-Item Env:ELASTIC_API_KEY -ErrorAction SilentlyContinue
+          }
+
+      - name: 1 - Import API fields documents and verify integrity
+        run: |
+          . "$env:TOTENKAHN_CI_ROOT\common.ps1"
+          Invoke-Totenkahn '01-profiles' @('dump', 'profiles', '--json')
+          $profiles = Get-Content "$runRoot\01-profiles.stdout.txt" -Raw | ConvertFrom-Json
+          if ($null -eq $profiles.profiles.'elastic-discover-v1') { throw 'Required Discover profile is missing.' }
+          Invoke-Totenkahn '01-import' @('dump', 'import', "$inputs\elastic-response.json", '--profile', 'elastic-discover-v1', '--output-dir', "$runRoot\dataset", '--json')
+          $manifest = Read-Report 'dataset\manifest.json'
+          Assert-Value $manifest.status 'passed' 'import status'
+          Assert-Value $manifest.counts.read 2 'read count'
+          Assert-Value $manifest.counts.accepted 2 'accepted count'
+          Assert-Value $manifest.counts.rejected 0 'rejected count'
+          Invoke-Totenkahn '01-verify' @('dump', 'verify', "$runRoot\dataset", '--json')
+          
+          $global:LASTEXITCODE = 0
+
+      - name: 2 - Sigma positive and negative decisions
+        run: |
+          . "$env:TOTENKAHN_CI_ROOT\common.ps1"
+          Invoke-Totenkahn '02-sigma' @('dump', 'analyze', "$runRoot\dataset", '--rule', "$inputs\baseline.yaml", '--mapping', "$inputs\mapping.json", '--output-dir', "$runRoot\sigma", '--json')
+          $report = Read-Report 'sigma\report.json'
+          Assert-Value $report.status 'passed' 'Sigma status'
+          Assert-Value @($report.rules).Count 1 'rule count'
+          Assert-Decisions $report.rules[0].counts
+          Assert-Value $report.rules[0].readiness.fully_evaluable 2 'fully evaluable events'
+          
+          $global:LASTEXITCODE = 0
+
+      - name: 3 - Case and timeline
+        run: |
+          . "$env:TOTENKAHN_CI_ROOT\common.ps1"
+          Invoke-Totenkahn '03-create' @('case', 'create', '--output-dir', "$runRoot\case", '--title', 'Direct Discover CI evidence', '--json')
+          Invoke-Totenkahn '03-add' @('case', 'add', "$runRoot\case", '--dataset', "$runRoot\dataset", '--label', 'endpoint', '--json')
+          Invoke-Totenkahn '03-timeline' @('case', 'timeline', "$runRoot\case", '--output-dir', "$runRoot\timeline", '--json')
+          $report = Read-Report 'timeline\report.json'
+          Assert-Value $report.status 'passed' 'timeline status'
+          Assert-Value $report.events 2 'timeline count'
+          Assert-Value $report.unknown_time 0 'unknown timestamps'
+          Invoke-Totenkahn '03-verify' @('case', 'verify', "$runRoot\case", '--json')
+          
+          $global:LASTEXITCODE = 0
+
+      - name: 4 - Hunting on directly imported evidence
+        run: |
+          . "$env:TOTENKAHN_CI_ROOT\common.ps1"
+          Invoke-Totenkahn '04-define' @('hunt', 'define', "$runRoot\case", '--name', 'positive-marker', '--author', 'CI', '--hypothesis', 'Find the reviewed positive marker', '--field', '/command_line', '--op', 'contains', '--value', ((Read-Report 'live-provenance.json').actions[0].marker), '--json')
+          Invoke-Totenkahn '04-run' @('hunt', 'run', "$runRoot\case", '--name', 'positive-marker', '--output-dir', "$runRoot\hunt", '--json')
+          $report = Read-Report 'hunt\report.json'
+          Assert-Value $report.status 'passed' 'hunt status'
+          Assert-Decisions $report.counts
+          Assert-Value $report.unknown_predicate_checks 0 'unknown checks'
+          
+          $global:LASTEXITCODE = 0
+
+      - name: 5a - Reviewed findings and valid candidate
+        run: |
+          . "$env:TOTENKAHN_CI_ROOT\common.ps1"
+          Invoke-Totenkahn '05-positive' @('finding', 'add', "$runRoot\case", '--name', 'positive', '--title', 'Reviewed positive', '--author', 'Engineer', '--reason', 'Reviewed real export row 2 contains the positive marker', '--expect', 'match', '--attachment', 'endpoint', '--row', '2', '--json')
+          Invoke-Totenkahn '05-negative' @('finding', 'add', "$runRoot\case", '--name', 'negative', '--title', 'Reviewed negative', '--author', 'Engineer', '--reason', 'Reviewed real export row 1 lacks the positive marker', '--expect', 'no-match', '--attachment', 'endpoint', '--row', '1', '--json')
+          Invoke-Totenkahn '05-good-export' @('finding', 'export', "$runRoot\case", '--name', 'positive', '--name', 'negative', '--baseline', "$inputs\baseline.yaml", '--candidate', "$inputs\candidate.yaml", '--mapping', "$inputs\mapping.json", '--output-dir', "$runRoot\bundle-good", '--json')
+          Invoke-Totenkahn '05-good-ci' @('ci', '--config', "$runRoot\bundle-good\pipeline.json", '--output-dir', "$runRoot\ci-good", '--json')
+          $report = Read-Report 'ci-good\report.json'
+          Assert-Value $report.status 'passed' 'good CI status'
+          Assert-Value @($report.jobs).Count 1 'good jobs'
+          Assert-Value $report.jobs[0].counts.cases 2 'good cases'
+          Assert-Value $report.jobs[0].counts.regressed 0 'good regressions'
+          Assert-Value $report.jobs[0].counts.not_met 0 'good unmet expectations'
+          Assert-Value $report.jobs[0].counts.insufficient 0 'good insufficient cases'
+          
+          $global:LASTEXITCODE = 0
+
+      - name: 5b - Deliberate regression must be detected
+        run: |
+          . "$env:TOTENKAHN_CI_ROOT\common.ps1"
+          Invoke-Totenkahn '05-bad-export' @('finding', 'export', "$runRoot\case", '--name', 'positive', '--name', 'negative', '--baseline', "$inputs\baseline.yaml", '--candidate', "$inputs\regressed.yaml", '--mapping', "$inputs\mapping.json", '--output-dir', "$runRoot\bundle-bad", '--json')
+          Invoke-Totenkahn '05-bad-ci' @('ci', '--config', "$runRoot\bundle-bad\pipeline.json", '--output-dir', "$runRoot\ci-bad", '--json') -ExpectedExit 1
+          $report = Read-Report 'ci-bad\report.json'
+          Assert-Value $report.status 'failed' 'negative control CI status'
+          Assert-Value @($report.jobs).Count 1 'negative control jobs'
+          Assert-Value $report.jobs[0].status 'failed' 'negative control job status'
+          Assert-Value $report.jobs[0].counts.cases 2 'negative control cases'
+          Assert-Value $report.jobs[0].counts.regressed 1 'negative control regressions'
+          Assert-Value $report.jobs[0].counts.not_met 1 'negative control unmet expectations'
+          Assert-Value $report.jobs[0].counts.insufficient 0 'negative control insufficient cases'
+          $global:LASTEXITCODE = 0
+          Write-Host 'PASS: the deliberate regression was detected with the expected report and exit code.'
+          
+          $global:LASTEXITCODE = 0
+
+      - name: Preserve local results and write summary
+        if: always()
+        env:
+          ACCEPTANCE_STATUS: ${{ job.status }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:TOTENKAHN_CI_ROOT
+          $archiveMessage = 'Results directory was not initialized.'
+          if ($root -and (Test-Path -LiteralPath $root)) {
+              $archive = "$root.zip"
+              Compress-Archive -LiteralPath $root -DestinationPath $archive
+              $archiveMessage = "Local review archive: $archive"
+              Write-Host $archiveMessage
+          }
+          @(
+              '## Live Elastic and regression acceptance'
+              ''
+              "Execution status: $env:ACCEPTANCE_STATUS"
+              ''
+              'Expected: import 2; Sigma 1 match / 1 no-match; timeline 2; hunt 1 match / 1 no-match. Baseline and candidate are pinned in rule-revisions.json.'
+              'Required: versioned candidate passes both controls; deliberate regression is rejected. Consult step reports for actual results.'
+              ''
+              $archiveMessage
+              ''
+              'Scope: controlled new process actions and Elastic API acquisition, followed by five-stage acceptance. No deployment or EDR alert validation.'
+              'Detailed telemetry and reports remain on the runner; no artifact upload is configured.'
+          ) | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
