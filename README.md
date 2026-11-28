@@ -2513,3 +2513,9 @@ CLI JSON є підсумком із посиланнями, а не обов’�
 `totenkahn ci revisions --repo REPOSITORY --baseline FULL_SHA --candidate FULL_SHA --output-dir NEW_DIRECTORY` evaluates rule data from two immutable Git revisions against the baseline's reviewed suite. Git is required for this development command. Candidate code and candidate changes to expectations are not executed. Missing fields and unknown source identity are reported as verification needed, not confirmed negative detections.
 
 The complete setup and acceptance instructions are in [examples/rule-ci/README.md](examples/rule-ci/README.md). Templates in `examples/ci-workflows/` separate hosted PR validation from manually authorized live Elastic checks on the lab runner. Activate these templates after the infrastructure baseline is merged. Existing source CI includes the new isolated revision and Elastic-validator tests. Preparing templates does not run GitHub jobs or endpoint actions.
+
+## Контрольована доставка та rollback
+
+`totenkahn-setup.exe delivery` додає окремий цикл `stage → test → activate`, перевірку активної версії та повернення до попередньої прийнятої версії. Активація й rollback потребують `-y` / `--yes`, імені оператора та причини погодження. Дані користувача зберігаються окремо від версій програми.
+
+[Повна інструкція, ручний workflow і критерії серверного приймання](docs/CONTROLLED_DELIVERY.md). Офлайн-тест доставки не замінює живий тест Elastic, а rollback програми не скасовує дії Atomic, зміни аудиту чи формату даних.

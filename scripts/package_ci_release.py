@@ -101,9 +101,29 @@ def package(build, output):
 Extract the entire ZIP; do not copy totenkahn.exe alone.
 Read build-report.json and acceptance/report.json for optional dependency limitations.
 CI results are under ci/. No Atomic tests were executed by this pipeline.
+RELEASE_SHA256SUMS identifies the release manifest for delivery stage/test/activate.
+Review delivery-review.json and docs/CONTROLLED_DELIVERY.md inside the release.
 First run prepares base modules only; selected test assets require explicit preparation.
 """,
         encoding="utf-8",
+    )
+
+    manifest_hash = sha256((release / "release-manifest.json").read_bytes()).hexdigest()
+    (output / "RELEASE_SHA256SUMS").write_text(
+        manifest_hash + "  release-manifest.json\n", encoding="ascii"
+    )
+    (output / "delivery-review.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "release_id": manifest_hash,
+            "source_commit": verify_release(release)["source_commit"],
+            "build_status": report["build_status"],
+            "acceptance_status": report["acceptance_status"],
+            "ci_status": ci["status"],
+            "limitations": report.get("limitations", []),
+            "scope": "Internal candidate; offline delivery acceptance and operator review required before activation",
+            "publisher_authentication": "Not provided by SHA-256; obtain expected hashes from the reviewed build run",
+        }, indent=2), encoding="utf-8"
     )
 
     return archive
