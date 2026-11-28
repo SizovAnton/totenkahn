@@ -248,8 +248,15 @@ def run_setup_command(args) -> int:
 def main(argv=None) -> int:
     configure_standard_streams()
     show_startup_banner(sys.argv[1:] if argv is None else argv)
+    arguments = sys.argv[1:] if argv is None else argv
+
+    if arguments[:1] == ["delivery"]:
+        from handlers.delivery_cli import main as delivery_main
+        return delivery_main(arguments[1:])
+
     parser = argparse.ArgumentParser(description="TOTENKAHN setup and environment diagnostics")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("delivery", help="Verified version delivery, acceptance, activation and rollback")
     doctor = commands.add_parser(
         "doctor",
         help="Inspect the environment without installing components",

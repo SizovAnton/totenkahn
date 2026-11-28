@@ -1,0 +1,71 @@
+name: Totenkahn - Controlled delivery
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'stage-test does not activate; activation and rollback require a separate reviewed run'
+        required: true
+        type: choice
+        options: [stage-test, activate, rollback, status]
+      release_id:
+        description: 'Reviewed release-manifest.json SHA-256 (previous release for rollback)'
+        required: true
+        type: string
+      reason:
+        description: 'Review outcome and acknowledged build/live limitations; required for activation/rollback'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: totenkahn-controlled-delivery
+  cancel-in-progress: false
+jobs:
+  delivery:
+    runs-on: [self-hosted, Windows, X64, totenkahn-lab]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Verify, test or promote the reviewed version
+        env:
+          DELIVERY_OPERATION: ${{ inputs.operation }}
+          DELIVERY_RELEASE: ${{ inputs.release_id }}
+          DELIVERY_REASON: ${{ inputs.reason }}
+          DELIVERY_REVIEWER: ${{ github.actor }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = 'C:\TotenkahnServer\delivery-tools\totenkahn-setup.exe'
+          $root = 'C:\TotenkahnServer\delivery-store'
+          $source = 'C:\TotenkahnServer\incoming-delivery\release'
+          if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'Provision the complete reviewed setup release in delivery-tools first' }
+          if ($env:DELIVERY_RELEASE -cnotmatch '^[0-9a-f]{64}$') { throw 'Expected the reviewed manifest SHA-256' }
+          function Invoke-Delivery {
+            param([string[]]$Options)
+            & $setup delivery @Options
+            if ($LASTEXITCODE -ne 0) { throw "Delivery failed with exit $LASTEXITCODE; active version is not automatically replaced" }
+          }
+          switch ($env:DELIVERY_OPERATION) {
+            'stage-test' {
+              Invoke-Delivery -Options @('stage', '--root', $root, '--release-dir', $source, '--expected-sha256', $env:DELIVERY_RELEASE)
+              Invoke-Delivery -Options @('test', '--root', $root, '--release', $env:DELIVERY_RELEASE, '--timeout', '600')
+            }
+            'activate' {
+              Invoke-Delivery -Options @('activate', '--root', $root, '--release', $env:DELIVERY_RELEASE, '--reviewer', $env:DELIVERY_REVIEWER, '--reason', $env:DELIVERY_REASON, '--yes')
+            }
+            'rollback' {
+              Invoke-Delivery -Options @('rollback', '--root', $root, '--release', $env:DELIVERY_RELEASE, '--reviewer', $env:DELIVERY_REVIEWER, '--reason', $env:DELIVERY_REASON, '--yes')
+            }
+            'status' { Invoke-Delivery -Options @('status', '--root', $root) }
+            default { throw 'Unsupported delivery operation' }
+          }
+          @(
+            '## Controlled delivery',
+            "Operation: $env:DELIVERY_OPERATION",
+            "Reviewed release: $env:DELIVERY_RELEASE",
+            'Local receipts: C:\TotenkahnServer\delivery-store\tests',
+            'Scope: executable delivery and synthetic offline acceptance. Live acceptance is reviewed separately.',
+            'User evidence, dependency generations, audit configuration and Atomic effects are not rolled back.',
+            'No local telemetry or acceptance artifacts are uploaded by this workflow.'
+          ) | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

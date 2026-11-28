@@ -31,6 +31,20 @@ jobs:
           $build = $builds[0].FullName
           python -B scripts/package_ci_release.py --build-dir "$build" --output-dir delivery
           exit $LASTEXITCODE
+      - name: Reviewed delivery identifiers
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $review = Get-Content -LiteralPath delivery/delivery-review.json -Raw | ConvertFrom-Json
+          @(
+            '## Windows delivery candidate',
+            "Source reference: $($review.source_commit)",
+            "Release ID / manifest SHA-256: $($review.release_id)",
+            "Acceptance: $($review.acceptance_status)",
+            'ZIP SHA-256:',
+            (Get-Content -LiteralPath delivery/SHA256SUMS -Raw),
+            'Review build limitations and provenance before transferring. Server offline acceptance and explicit activation are separate operations.',
+            'See docs/CONTROLLED_DELIVERY.md. No server deployment occurred in this build.'
+          ) | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
       - name: Candidate bundle
         uses: actions/upload-artifact@v7
         with:

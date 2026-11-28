@@ -53,6 +53,8 @@ def snapshot(root):
             ),
         )
 
+    paths.extend(p for p in (root / "docs").rglob("*.md") if p.is_file())
+
     paths.extend(
         (p for p in (root / "examples").rglob("*") if p.is_file() and "__pycache__" not in p.parts),
     )
@@ -169,6 +171,9 @@ def package_release(root, build, baseline):
         release / "examples",
         ignore=shutil.ignore_patterns("__pycache__"),
     )
+
+    if (root / "docs").is_dir():
+        shutil.copytree(root / "docs", release / "docs")
 
     for name in ("README.md", "LICENSE"):
         shutil.copy2(root / name, release / name)
