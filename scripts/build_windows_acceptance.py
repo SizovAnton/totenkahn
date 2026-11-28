@@ -20,6 +20,7 @@ from handlers.release_manifest import (
 )
 
 from handlers.cli_result import STATUS_CODES, status_code, run_cli
+from handlers.version import VERSION
 from handlers.process_control import terminate_process
 
 PACKAGES = ("PyInstaller==6.22.3", "PyYAML==6.0.3", "rich==15.0.0")
@@ -234,7 +235,7 @@ def package_release(root, build, baseline):
         release,
         build_manifest(
             release,
-            version="0.0.0-acceptance." + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
+            version=VERSION,
             source_commit=baseline,
         ),
     )

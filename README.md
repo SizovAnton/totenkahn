@@ -1,4 +1,4 @@
-# Totenkahn
+# Totenkahn v0.1.0
 
 Локальна платформа Evidence / Hunting / Detection Validation. Цей посібник описує поточні команди та межі їхніх результатів; наявність функції не означає приймання всіх джерел і сценаріїв.
 
@@ -2507,15 +2507,202 @@ CLI JSON є підсумком із посиланнями, а не обов’�
 
 **Що перевірити:** фактичні шляхи артефактів, контекст запуску й наявність пов’язаних файлів. Для незалежної повторної перевірки зберігайте також відповідні докази; сам HTML їх не замінює.
 
+## 27. CI/CD: перевірка версій правил
 
-## CI: versioned rule changes and live evidence contracts
+CI автоматично перевіряє зміни до їх приймання. У Totenkahn окремо перевіряються вихідний код платформи та результати правил на зафіксованих доказах. CD доставляє перевірену збірку на сервер, але активує її лише після окремої згоди оператора.
 
-`totenkahn ci revisions --repo REPOSITORY --baseline FULL_SHA --candidate FULL_SHA --output-dir NEW_DIRECTORY` evaluates rule data from two immutable Git revisions against the baseline's reviewed suite. Git is required for this development command. Candidate code and candidate changes to expectations are not executed. Missing fields and unknown source identity are reported as verification needed, not confirmed negative detections.
+Ланцюжок: **Git-коміти → перевірка очікувань → живе приймання → Windows-пакет → перевірка доставки → активація → можливий rollback**. Зелений source CI не означає, що створено `.exe`, а успішна доставка не означає готовність усіх live-сценаріїв.
 
-The complete setup and acceptance instructions are in [examples/rule-ci/README.md](examples/rule-ci/README.md). Templates in `examples/ci-workflows/` separate hosted PR validation from manually authorized live Elastic checks on the lab runner. Activate these templates after the infrastructure baseline is merged. Existing source CI includes the new isolated revision and Elastic-validator tests. Preparing templates does not run GitHub jobs or endpoint actions.
+### Перевірка правил із двох Git-комітів
 
-## Контрольована доставка та rollback
+Порівнює baseline та candidate за повними SHA комітів. Код перевірки, контракт і очікування беруться з переглянутої baseline-версії; зміни очікувань у candidate не можуть приховати регресію. Потрібні Git і локальна копія репозиторію з обома комітами.
 
-`totenkahn-setup.exe delivery` додає окремий цикл `stage → test → activate`, перевірку активної версії та повернення до попередньої прийнятої версії. Активація й rollback потребують `-y` / `--yes`, імені оператора та причини погодження. Дані користувача зберігаються окремо від версій програми.
+**Синтаксис:**
 
-[Повна інструкція, ручний workflow і критерії серверного приймання](docs/CONTROLLED_DELIVERY.md). Офлайн-тест доставки не замінює живий тест Elastic, а rollback програми не скасовує дії Atomic, зміни аудиту чи формату даних.
+```powershell
+.\totenkahn.exe ci revisions --repo "<REPOSITORY>" --baseline <FULL_BASELINE_SHA> --candidate <FULL_CANDIDATE_SHA> --output-dir "<NEW_DIRECTORY>"
+```
+
+**Приклад:**
+
+```powershell
+.\totenkahn.exe ci revisions --repo 'C:\TotenkahnBuild\source' --baseline 6407d024d5202e3fd5418d8e28968c887e7c305f --candidate 5a9659d7d39d9c9e0a2c8780f4abcb3e2b7ff2e9 --output-dir 'C:\Reports\rule-revisions-01'
+```
+
+Це історичні коміти лабораторного приймання; для власної зміни вкажіть SHA свого baseline і candidate. Команда не виконує код candidate, Atomic чи мережевий збір. Вихідні файли й звіти зберігаються в новому каталозі. За потреби `--contract` задає інший переглянутий контракт із baseline.
+
+**Що перевірити:** `baseline_commit`, `candidate_commit`, `decision`, кількість `regressed`, `not_met`, `insufficient` і докази окремих випадків. Код завершення: `0` — passed, `1` — відхилений кандидат, `2` — помилка, `3` — потрібна перевірка. Невідомі або відсутні потрібні дані не прирівнюються до підтвердженого NO MATCH.
+
+### Автоматична перевірка pull request
+
+Workflow `rule-revisions.yml` запускає перевірку правила на GitHub-hosted runner. Baseline — коміт базової гілки PR, candidate — коміт гілки зі змінами, а не тимчасовий merge-коміт GitHub. Окремий `ci.yml` перевіряє вихідний код на Linux і Windows.
+
+**Порядок запуску:**
+
+1. Спочатку прийміть інфраструктуру CI та переглянуті baseline-очікування в основну гілку.
+2. Створіть гілку зі зміною правила, запуште її та відкрийте pull request.
+3. Перегляньте перевірки `TOTENKAHN source and detection CI` та `Totenkahn - Versioned rule gate`.
+4. Порівняйте звіт із задумом зміни перед merge. Зміни workflow або baseline-політики також потребують review.
+
+**Приклад:** у лабораторному `examples/rule-ci/rule.yaml` заміна `_POSITIVE` на `_NEVER_EXECUTED` має відхилити candidate з однією регресією. Після негативного тесту відновіть правило й дочекайтеся успішної перевірки.
+
+**Що перевірити:** фактичні SHA, звіти rule gate та точну причину відхилення. `ci-windows-…zip` — архів звітів, а не Windows-програма. Для PR-перевірок не потрібні Elastic secrets, self-hosted runner або виконання дій на сервері.
+
+### Живе приймання через Elastic
+
+Ручний workflow `elastic-live-revisions.yml` спочатку виконує офлайн-перевірку версій правил. Лише після успіху створює дві контрольовані команди `cmd.exe /d /c echo` на лабораторному хості, отримує свіжі процесні події через Elastic API й перевіряє п'ять етапів обробки.
+
+**Налаштування та запуск:**
+
+1. Додайте шаблон із `examples/ci-workflows/elastic-live-revisions.yml` у `.github/workflows/` довіреного лабораторного репозиторію.
+2. Узгодьте всі шляхи `release-discover-ci` у шаблоні з каталогом перевіреної програми, а також локальні шляхи CA та curl. Шаблон не вибирає активну delivery-версію автоматично.
+3. Налаштуйте runner із мітками `self-hosted`, `Windows`, `X64`, `totenkahn-lab`.
+4. Задайте repository variables `ELASTIC_URL`, `ELASTIC_CONNECT_IP`, `ELASTIC_PROCESS_INDEX`, `ELASTIC_HOST_ID` і secret `ELASTIC_API_KEY`. Наявний контракт очікує HTTPS `https://es01:9200`, перевірений CA та індекс `logs-endpoint.events.process-*`.
+5. Для іншого source repository задайте `TOTENKAHN_RULE_REPOSITORY`. Якщо він приватний, додайте `TOTENKAHN_RULES_READ_TOKEN` лише з доступом читання потрібного репозиторію.
+6. В **Actions → Totenkahn - Versioned live Elastic acceptance → Run workflow** введіть повні SHA `baseline` і `candidate`.
+
+**Приклад:** baseline `6407d024d5202e3fd5418d8e28968c887e7c305f`, candidate `5a9659d7d39d9c9e0a2c8780f4abcb3e2b7ff2e9` — пара, перевірена в лабораторії. Для нового правила потрібні відповідні переглянуті сценарій і очікування; два echo-маркери не перевіряють довільну техніку.
+
+**Що перевірити:** 2 імпортовані події, 1 MATCH / 1 NO MATCH у Sigma та Hunting, 2 події timeline, PASS правильного candidate та рівно 1 регресію для навмисно зіпсованого контролю. У `live-provenance.json` мають збігатися хост, PID, маркер, час та хеш оригінальної API-відповіді. Повні результати залишаються на runner у `ci-runs\live-revisions-<RUN_ID>-<ATTEMPT>.zip`. Це перевірка телеметрії й логіки детекції, не спрацювання EDR-алерту та не публікація правила в Elastic/Splunk.
+
+Деталі контракту й інфраструктури: [examples/rule-ci/README.md](examples/rule-ci/README.md).
+
+## 28. CD: доставка, активація та rollback
+
+Зберігає перевірені Windows-збірки поруч і перемикає активну версію після серверного офлайн-тесту та згоди оператора. Каталог інструмента `totenkahn-setup.exe`, вхідний пакет, сховище версій і дані користувача мають бути відокремлені.
+
+Приклади нижче виконуються з каталогу **повного перевіреного інструмента доставки**. `--root` у всіх командах має бути однаковим. Без нього використовується сховище `totenkahn-delivery` у стандартному локальному каталозі даних поточного користувача.
+
+### Отримання Windows-пакета
+
+Створює обидва `.exe`, перевіряє збірку та експортує пакет зі звітами. Вручну запустіть **Actions → TOTENKAHN Windows candidate → Run workflow** на переглянутій гілці.
+
+**Приклад пакета:** артефакт `totenkahn-windows-candidate-<COMMIT>` містить внутрішній `totenkahn-windows-candidate.zip`, `SHA256SUMS`, `RELEASE_SHA256SUMS`, `delivery-review.json` та звіти приймання. Зовнішній ZIP GitHub потрібно розпакувати першим; `.exe` розташовані у внутрішньому ZIP.
+
+**Команда перевірки внутрішнього архіву:**
+
+```powershell
+Get-FileHash -LiteralPath 'C:\TotenkahnServer\incoming-delivery\totenkahn-windows-candidate.zip' -Algorithm SHA256
+```
+
+Порівняйте хеш із підсумком довіреного build run. Після збігу розпакуйте **весь** внутрішній ZIP у новий каталог:
+
+```powershell
+Expand-Archive -LiteralPath 'C:\TotenkahnServer\incoming-delivery\totenkahn-windows-candidate.zip' -DestinationPath 'C:\TotenkahnServer\candidate'
+```
+
+**Що перевірити:** `build_status`, `acceptance_status`, `limitations`, походження в `build-provenance.json` та обидва `.exe`. `passed_with_warnings` не приховує відсутність модулів Atomic або неперевірені live-сценарії. SHA-256 перевіряє байти, але сам по собі не засвідчує видавця.
+
+### Перевірка й підготовка версії
+
+`inspect` перевіряє вхідний release без копіювання. `stage` копіює його в окремий слот і повторно перевіряє файли. Ідентифікатор версії — SHA-256 файла `release-manifest.json`, **не ZIP-архіву**.
+
+**Синтаксис:**
+
+```powershell
+.\totenkahn-setup.exe delivery inspect --release-dir "<RELEASE_DIRECTORY>" --expected-sha256 <REVIEWED_MANIFEST_SHA256>
+.\totenkahn-setup.exe delivery stage --root "<STORE>" --release-dir "<RELEASE_DIRECTORY>" --expected-sha256 <REVIEWED_MANIFEST_SHA256>
+```
+
+**Приклад:** після незалежного порівняння `RELEASE_SHA256SUMS` із підсумком build run прочитайте його значення:
+
+```powershell
+$releaseId = ((Get-Content -LiteralPath 'C:\TotenkahnServer\incoming-delivery\RELEASE_SHA256SUMS' -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+.\totenkahn-setup.exe delivery stage --root 'C:\TotenkahnServer\delivery-store' --release-dir 'C:\TotenkahnServer\candidate' --expected-sha256 $releaseId
+```
+
+**Що перевірити:** PASS, правильний `release_id`, `active_changed: false`. Наявний слот не перезаписується. Помилка копіювання або цілісності не активує candidate.
+
+### Серверний тест доставленої версії
+
+Перевіряє запуск обох `.exe` та всі п'ять офлайн-етапів з двадцятьма іменованими перевірками. Використовує ізольовані синтетичні дані, без Atomic та зовнішніх сервісів.
+
+**Синтаксис:**
+
+```powershell
+.\totenkahn-setup.exe delivery test --root "<STORE>" --release <RELEASE_ID> [--timeout <SECONDS>]
+```
+
+**Приклад:** використовується `$releaseId` із попереднього кроку:
+
+```powershell
+.\totenkahn-setup.exe delivery test --root 'C:\TotenkahnServer\delivery-store' --release $releaseId --timeout 600
+```
+
+**Що перевірити:** PASS і повернений шлях до `receipt.json`; повний звіт знаходиться поряд у `offline/report.json`. Консоль може не показувати проміжного прогресу: журнали зберігаються у `tests\<ID>`. Receipt зв'язує версію з хешами звіту й журналів. Активація повторно перевіряє ці докази. Нова невдала перевірка не замінює чинну активну версію.
+
+### Явна активація
+
+Перемикає активну версію після перевірки release та збереженого приймання. Оператор має переглянути обмеження збірки й окремі live-докази для свого сценарію.
+
+**Синтаксис:**
+
+```powershell
+.\totenkahn-setup.exe delivery activate --root "<STORE>" --release <RELEASE_ID> --reviewer "<OPERATOR>" --reason "<REVIEW_REASON>" --yes
+```
+
+**Приклад:**
+
+```powershell
+.\totenkahn-setup.exe delivery activate --root 'C:\TotenkahnServer\delivery-store' --release $releaseId --reviewer Engineer --reason 'Lab activation; offline acceptance reviewed; live limitations acknowledged.' -y
+```
+
+`-y` і `--yes` означають явну згоду. Причина є записом рішення оператора, а не автоматичним доказом живого приймання.
+
+**Що перевірити:** PASS, `active`, `previous` та запис `activate` в історії. При першій активації попередньої версії немає.
+
+### Стан і запуск активної програми
+
+Перевіряє активний release та запускає саме його. Аргументи після `--` передаються програмі без зміни.
+
+**Синтаксис:**
+
+```powershell
+.\totenkahn-setup.exe delivery status --root "<STORE>" [--json]
+.\totenkahn-setup.exe delivery run --root "<STORE>" -- <APPLICATION_COMMAND_AND_ARGUMENTS>
+```
+
+**Приклад:**
+
+```powershell
+.\totenkahn-setup.exe delivery status --root 'C:\TotenkahnServer\delivery-store'
+.\totenkahn-setup.exe delivery run --root 'C:\TotenkahnServer\delivery-store' -- dump profiles
+```
+
+**Що перевірити:** потрібний `active` і успішне виконання команди. Прямий запуск іншої копії `totenkahn.exe` не перевіряє механізм active selection. `TOTENKAHN_HOME` зберігається; без нього використовуються стандартні дані поточного користувача. Дані не повинні розміщуватися всередині delivery store. Під час `delivery run` сховище заблоковане для одночасної активації чи rollback.
+
+### Повернення попередньої прийнятої версії
+
+Rollback повторно перевіряє попередній release та його докази приймання, після чого перемикає active. Потрібні дві різні версії, які вже були протестовані й активовані.
+
+**Синтаксис:**
+
+```powershell
+.\totenkahn-setup.exe delivery rollback --root "<STORE>" [--release <EXPECTED_PREVIOUS_ID>] --reviewer "<OPERATOR>" --reason "<REASON>" --yes
+```
+
+**Приклад:**
+
+```powershell
+.\totenkahn-setup.exe delivery rollback --root 'C:\TotenkahnServer\delivery-store' --reviewer Engineer --reason 'Controlled return to the previous accepted release.' -y
+.\totenkahn-setup.exe delivery status --root 'C:\TotenkahnServer\delivery-store'
+.\totenkahn-setup.exe delivery run --root 'C:\TotenkahnServer\delivery-store' -- dump profiles
+```
+
+Для суворої перевірки цілі додайте `--release` із заздалегідь переглянутим ID попередньої версії.
+
+**Що перевірити:** active повернувся до попереднього ID, previous вказує на щойно замінену версію, в історії є `rollback`, програма запускається. Обидва слоти й дані залишаються на місці. Rollback не скасовує зміни аудиту, дії Atomic, підготовку залежностей або міграції даних.
+
+### Ручний workflow доставки
+
+Шаблон `examples/ci-workflows/controlled-delivery.yml` запускається лише через `workflow_dispatch` на довіреному лабораторному runner. Він використовує окремий перевірений інструмент доставки та вже перенесений оператором пакет.
+
+**Порядок запуску:** перенесіть шаблон у `.github/workflows/` лабораторного репозиторію, узгодьте шляхи, запустіть `stage-test`, перегляньте результати, а потім окремо `activate`. Для повернення використайте `rollback` з ID очікуваної попередньої версії.
+
+**Приклад параметрів:** `operation: stage-test`, `release_id`: переглянутий SHA-256 маніфесту, `reason`: мета лабораторного приймання. Для `activate` і `rollback` reason має описувати рішення та враховані обмеження.
+
+**Що перевірити:** підсумок job і локальний стан сховища. Телеметрія не завантажується в GitHub. Доставка застосунку не розгортає правила в SIEM/EDR. Детальний порядок: [docs/CONTROLLED_DELIVERY.md](docs/CONTROLLED_DELIVERY.md).
+
+## 29. Реліз v0.1.0
+
+[Опис релізу, докази приймання та відомі обмеження v0.1.0](docs/RELEASE_NOTES_v0.1.0.md).
