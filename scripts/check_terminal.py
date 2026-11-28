@@ -187,7 +187,7 @@ class TerminalTests(unittest.TestCase):
             )
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertEqual(json.loads(process.stdout)["status"], "passed")
-            self.assertNotIn("T O T E N K A H N", process.stderr)
+            self.assertNotIn("T  O  T  E  N  K  A  H  N", process.stderr)
 
     def test_builder_bootstraps_without_site_packages(self):
         process = subprocess.run(
@@ -229,7 +229,7 @@ class TerminalTests(unittest.TestCase):
         ):
             show_startup_banner(["dump", "list"], stream)
 
-        self.assertIn("T O T E N K A H N", stream.getvalue())
+        self.assertEqual(stream.getvalue(), "\n    T  O  T  E  N  K  A  H  N\n             v0.1.0\n\n")
         self.assertNotIn("\x1b", stream.getvalue())
 
     def test_no_color_legacy_console_has_no_styles(self):

@@ -167,7 +167,7 @@ class CITests(unittest.TestCase):
         with patch("sys.stdout", stream):
             show_startup_banner([], stream)
 
-        self.assertIn("T O T E N K A H N", stream.getvalue())
+        self.assertIn("T  O  T  E  N  K  A  H  N", stream.getvalue())
         self.assertRegex(stream.getvalue(), r"v\d+\.\d+\.\d+")
         self.assertLessEqual(len(stream.getvalue().splitlines()), 6)
 

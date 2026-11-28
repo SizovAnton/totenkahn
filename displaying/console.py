@@ -1,6 +1,7 @@
 import os
 import sys
 from rich.console import Console
+from handlers.version import VERSION
 
 
 def configure_standard_streams():
@@ -37,18 +38,14 @@ def show_startup_banner(arguments, stream=None):
     if arguments and arguments[0] == "ci":
         return
 
-    from rich import box
-    from rich.panel import Panel
     from rich.text import Text
 
-    brand = Text("T O T E N K A H N", style="bold cyan", justify="center")
-    brand.append("\nv1.0.0")
+    brand = Text("\n    T  O  T  E  N  K  A  H  N\n", style="bold cyan")
+    brand.append(f"             v{VERSION}\n", style="dim")
     Console(
         file=stream,
         legacy_windows=False,
         markup=False,
         highlight=False,
         color_system=None if "NO_COLOR" in os.environ else "auto",
-    ).print(
-        Panel(brand, box=box.ASCII, border_style="cyan", width=62, padding=(0, 1)),
-    )
+    ).print(brand)
